@@ -145,7 +145,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
           flex h-screen w-64 shrink-0 flex-col
           bg-[#18211D] text-white
           transition-transform duration-300
-          lg:sticky lg:top-0 lg:z-auto
+          lg:sticky lg:top-0 lg:z-50
           lg:flex lg:h-screen
           lg:translate-x-0
           ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
