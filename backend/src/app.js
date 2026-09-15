@@ -17,15 +17,42 @@ import uploadRoutes from "./routes/upload.routes.js";
 
 import notFound from "./middleware/notFound.middleware.js";
 import errorHandler from "./middleware/error.middleware.js";
-
 import { apiRateLimiter } from "./middleware/rateLimit.middleware.js";
+
 import corsOptions from "./config/cors.js";
+import connectDB from "./config/db.js";
+
 const app = express();
+
+/*
+ * Connect to MongoDB before handling API requests.
+ * connectDB() uses a cached connection, so Vercel can
+ * reuse the same MongoDB connection across requests.
+ */
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("Database connection error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Database connection failed",
+    });
+  }
+});
 
 app.use(helmet());
 
 app.use(cors(corsOptions));
+
+/*
+ * Explicitly handle CORS preflight requests.
+ * Required for cross-origin requests from the Vercel frontend.
+ */
 app.options("/{*splat}", cors(corsOptions));
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use(
@@ -38,7 +65,8 @@ app.use(
 app.use(cookieParser());
 
 app.use(morgan("dev"));
-//app.use(apiRateLimiter);
+
+app.use(apiRateLimiter);
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({
@@ -46,36 +74,32 @@ app.get("/api/health", (req, res) => {
     message: "TaskFlow AI API is running",
   });
 });
+
 app.get("/api/db-health", async (req, res) => {
-  try {
-    const connectDB = (await import("./config/db.js")).default;
-
-    await connectDB();
-
-    res.status(200).json({
-      success: true,
-      message: "MongoDB connection is working",
-    });
-  } catch (error) {
-    console.error("DB health check failed:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "MongoDB connection failed",
-      error: error.message,
-    });
-  }
+  res.status(200).json({
+    success: true,
+    message: "MongoDB connection is working",
+  });
 });
 
 app.use("/api/auth", authRoutes);
+
 app.use("/api/users", userRoutes);
+
 app.use("/api/workspaces", workspaceRoutes);
+
 app.use("/api/projects", projectRoutes);
+
 app.use("/api/tasks", taskRoutes);
+
 app.use("/api/comments", commentRoutes);
+
 app.use("/api/notifications", notificationRoutes);
+
 app.use("/api/ai", aiRoutes);
+
 app.use("/api/activities", activityRoutes);
+
 app.use("/api/uploads", uploadRoutes);
 
 app.use(notFound);
