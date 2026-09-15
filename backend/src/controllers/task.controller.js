@@ -2,14 +2,14 @@ import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 
 import {
-  createTask as createTaskService,
-  getTasks as getTasksService,
-  getTaskById,
-  updateTask as updateTaskService,
-  deleteTask as deleteTaskService,
-  assignTask as assignTaskService,
-  updateTaskStatus as updateTaskStatusService,
-  deleteTaskAttachment as deleteTaskAttachmentService,
+  createTaskService,
+  getTasksService,
+  getTaskByIdService,
+  updateTaskService,
+  deleteTaskService,
+  assignTaskService,
+  updateTaskStatusService,
+  deleteTaskAttachmentService,
 } from "../services/task.service.js";
 
 export const createTask = asyncHandler(async (req, res) => {
@@ -33,29 +33,39 @@ export const getTasks = asyncHandler(async (req, res) => {
 });
 
 export const getTask = asyncHandler(async (req, res) => {
-  const task = await getTaskById(req.params.id, req.user._id);
+  const task = await getTaskByIdService({
+    taskId: req.params.id,
+    userId: req.user._id,
+  });
 
   res.status(200).json(new ApiResponse(200, task, "Task fetched successfully"));
 });
 
 export const updateTask = asyncHandler(async (req, res) => {
-  const task = await updateTaskService(req.params.id, req.body, req.user._id);
+  const task = await updateTaskService({
+    taskId: req.params.id,
+    userId: req.user._id,
+    ...req.body,
+  });
 
   res.status(200).json(new ApiResponse(200, task, "Task updated successfully"));
 });
 
 export const deleteTask = asyncHandler(async (req, res) => {
-  await deleteTaskService(req.params.id, req.user._id);
+  await deleteTaskService({
+    taskId: req.params.id,
+    userId: req.user._id,
+  });
 
   res.status(200).json(new ApiResponse(200, null, "Task deleted successfully"));
 });
 
 export const assignTask = asyncHandler(async (req, res) => {
-  const task = await assignTaskService(
-    req.params.id,
-    req.body.assignedTo,
-    req.user._id,
-  );
+  const task = await assignTaskService({
+    taskId: req.params.id,
+    userId: req.user._id,
+    assignedTo: req.body.assignedTo,
+  });
 
   res
     .status(200)
@@ -63,11 +73,11 @@ export const assignTask = asyncHandler(async (req, res) => {
 });
 
 export const updateTaskStatus = asyncHandler(async (req, res) => {
-  const task = await updateTaskStatusService(
-    req.params.id,
-    req.body.status,
-    req.user._id,
-  );
+  const task = await updateTaskStatusService({
+    taskId: req.params.id,
+    userId: req.user._id,
+    status: req.body.status,
+  });
 
   res
     .status(200)
@@ -75,11 +85,11 @@ export const updateTaskStatus = asyncHandler(async (req, res) => {
 });
 
 export const deleteTaskAttachment = asyncHandler(async (req, res) => {
-  const task = await deleteTaskAttachmentService(
-    req.params.taskId,
-    req.params.attachmentId,
-    req.user._id,
-  );
+  const task = await deleteTaskAttachmentService({
+    taskId: req.params.taskId,
+    attachmentId: req.params.attachmentId,
+    userId: req.user._id,
+  });
 
   res
     .status(200)

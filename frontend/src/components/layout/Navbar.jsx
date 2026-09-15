@@ -154,7 +154,7 @@ const Navbar = ({ setMobileOpen }) => {
 
   return (
     <header className="relative flex min-h-16 shrink-0 items-center justify-between gap-2 border-b border-[#E1E5E2] bg-white px-3 sm:min-h-20 sm:px-5 md:px-6 lg:px-8">
-      {/* Left side */}
+      {}
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <button
           type="button"
@@ -176,9 +176,9 @@ const Navbar = ({ setMobileOpen }) => {
         </div>
       </div>
 
-      {/* Right side */}
+      {}
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2 md:gap-3">
-        {/* Desktop search */}
+        {}
         <div ref={searchRef} className="relative hidden sm:block">
           {!searchOpen ? (
             <button
@@ -231,7 +231,7 @@ const Navbar = ({ setMobileOpen }) => {
           )}
         </div>
 
-        {/* Mobile search */}
+        {}
         <button
           type="button"
           onClick={() => {
@@ -245,7 +245,7 @@ const Navbar = ({ setMobileOpen }) => {
           <Search size={19} />
         </button>
 
-        {/* Guide */}
+        {}
         <button
           type="button"
           onClick={handleGuide}
@@ -255,7 +255,7 @@ const Navbar = ({ setMobileOpen }) => {
           <span>Guide</span>
         </button>
 
-        {/* AI */}
+        {}
         <button
           type="button"
           onClick={handleAI}
@@ -265,7 +265,7 @@ const Navbar = ({ setMobileOpen }) => {
           <span>AI Assistant</span>
         </button>
 
-        {/* Create */}
+        {}
         <div ref={createRef} className="relative">
           <button
             type="button"
@@ -335,7 +335,7 @@ const Navbar = ({ setMobileOpen }) => {
           )}
         </div>
 
-        {/* Notifications */}
+        {}
         <button
           type="button"
           onClick={handleNotifications}
@@ -346,7 +346,7 @@ const Navbar = ({ setMobileOpen }) => {
           <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-[#8A2638] sm:right-2.5 sm:top-2" />
         </button>
 
-        {/* Account */}
+        {}
         <div ref={userRef} className="relative">
           <button
             type="button"
@@ -396,7 +396,7 @@ const Navbar = ({ setMobileOpen }) => {
               </div>
 
               <div className="p-2">
-                {/* Mobile-only Guide and AI links */}
+                {}
                 <div className="mb-1 border-b border-[#E7EBE8] pb-1 md:hidden">
                   <button
                     type="button"
@@ -451,7 +451,7 @@ const Navbar = ({ setMobileOpen }) => {
         </div>
       </div>
 
-      {/* Mobile search panel */}
+      {}
       {searchOpen && (
         <div className="absolute left-0 right-0 top-16 z-40 border-b border-[#DDE3DF] bg-white p-3 shadow-md sm:hidden">
           <form

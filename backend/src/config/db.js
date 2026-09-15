@@ -5,12 +5,10 @@ let cachedConnection = null;
 let connectionPromise = null;
 
 const connectDB = async () => {
-  // Already connected
   if (mongoose.connection.readyState === 1) {
     return cachedConnection;
   }
 
-  // Connection is already being established
   if (connectionPromise) {
     return connectionPromise;
   }
@@ -29,7 +27,6 @@ const connectDB = async () => {
     .catch((error) => {
       console.error("MongoDB connection failed:", error.message);
 
-      // Allow the next request to try again
       connectionPromise = null;
 
       throw error;

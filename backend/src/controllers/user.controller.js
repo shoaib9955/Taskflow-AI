@@ -112,7 +112,7 @@ export const updateAvatar = asyncHandler(async (req, res) => {
         await deleteFromCloudinary(oldPublicId);
       }
     } catch (error) {
-      console.error("Failed to delete old avatar:", error);
+
     }
   }
 

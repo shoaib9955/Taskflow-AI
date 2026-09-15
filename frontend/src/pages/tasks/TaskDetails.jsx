@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import api from "../../services/api";
+import { useWorkspace } from "../../context/WorkspaceContext";
 
 const initialFormData = {
   title: "",
@@ -42,6 +43,7 @@ const TaskDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
 
   const [task, setTask] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -88,13 +90,25 @@ const TaskDetails = () => {
         api.get(`/tasks/${id}`),
         api.get("/projects", {
           params: {
+            workspace: currentWorkspace._id,
             page: 1,
             limit: 100,
           },
         }),
       ]);
 
-      setTask(taskResponse.data.data);
+      const taskData = taskResponse.data.data;
+      const taskWorkspaceId = getId(taskData?.workspace);
+
+      if (
+        currentWorkspace?._id &&
+        taskWorkspaceId &&
+        taskWorkspaceId !== currentWorkspace._id
+      ) {
+        throw new Error("This task does not belong to the selected workspace.");
+      }
+
+      setTask(taskData);
 
       setProjects(
         projectsResponse.data.data?.projects ||
@@ -109,10 +123,18 @@ const TaskDetails = () => {
   };
 
   useEffect(() => {
-    if (id) {
-      fetchTask();
+    if (!id || workspaceLoading) {
+      return;
     }
-  }, [id]);
+
+    if (!currentWorkspace?._id) {
+      setError("No workspace selected.");
+      setLoading(false);
+      return;
+    }
+
+    fetchTask();
+  }, [id, currentWorkspace?._id, workspaceLoading]);
 
   const fetchComments = async () => {
     if (!id) {
@@ -630,9 +652,21 @@ const TaskDetails = () => {
 
   const attachments = Array.isArray(task.attachments) ? task.attachments : [];
 
+  const taskWorkspace = workspace || currentWorkspace;
+  const taskWorkspaceRole = getWorkspaceMemberRole(taskWorkspace, user);
+  const isTaskCreator = getId(task.createdBy) === getId(user);
+  const isTaskAssignee = getId(task.assignedTo) === getId(user);
+  const canUpdateTask =
+    ["owner", "admin", "manager"].includes(taskWorkspaceRole) ||
+    isTaskCreator ||
+    isTaskAssignee;
+  const canAssignTask = ["owner", "admin", "manager"].includes(
+    taskWorkspaceRole,
+  );
+  const canDeleteTask = ["owner", "admin"].includes(taskWorkspaceRole);
+
   return (
     <div className="w-full">
-
       <button
         type="button"
         onClick={() => navigate("/tasks")}
@@ -689,23 +723,27 @@ const TaskDetails = () => {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={openEditModal}
-                className="flex h-10 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-4 text-sm font-medium text-[#18211D] transition hover:border-[#BFD8C7] hover:bg-[#EAF1EC] hover:text-[#315C4B]"
-              >
-                <Pencil size={16} />
-                Edit
-              </button>
+              {canUpdateTask && (
+                <button
+                  type="button"
+                  onClick={openEditModal}
+                  className="flex h-10 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-4 text-sm font-medium text-[#18211D] transition hover:border-[#BFD8C7] hover:bg-[#EAF1EC] hover:text-[#315C4B]"
+                >
+                  <Pencil size={16} />
+                  Edit
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={openDeleteModal}
-                className="flex h-10 items-center gap-2 rounded-lg border border-[#E1C7C5] bg-[#FBF3F2] px-4 text-sm font-medium text-[#8A2638] transition hover:bg-[#F8ECEB]"
-              >
-                <Trash2 size={16} />
-                Delete
-              </button>
+              {canDeleteTask && (
+                <button
+                  type="button"
+                  onClick={openDeleteModal}
+                  className="flex h-10 items-center gap-2 rounded-lg border border-[#E1C7C5] bg-[#FBF3F2] px-4 text-sm font-medium text-[#8A2638] transition hover:bg-[#F8ECEB]"
+                >
+                  <Trash2 size={16} />
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -742,9 +780,7 @@ const TaskDetails = () => {
       </section>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-
         <div className="space-y-6">
-
           <section className="border border-[#DDE3DF] bg-white">
             <div className="border-b border-[#E7EBE8] p-5">
               <h2 className="text-lg font-semibold text-[#18211D]">
@@ -782,6 +818,7 @@ const TaskDetails = () => {
                 icon={<Circle size={18} />}
                 label="To Do"
                 onClick={() => handleStatusChange("todo")}
+                disabled={!canUpdateTask}
               />
 
               <StatusOption
@@ -789,6 +826,7 @@ const TaskDetails = () => {
                 icon={<Clock3 size={18} />}
                 label="In Progress"
                 onClick={() => handleStatusChange("in-progress")}
+                disabled={!canUpdateTask}
               />
 
               <StatusOption
@@ -796,6 +834,7 @@ const TaskDetails = () => {
                 icon={<CheckCircle2 size={18} />}
                 label="Completed"
                 onClick={() => handleStatusChange("completed")}
+                disabled={!canUpdateTask}
               />
             </div>
           </section>
@@ -839,6 +878,7 @@ const TaskDetails = () => {
                 multiple
                 accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx"
                 onChange={handleFileSelect}
+                disabled={!canUpdateTask}
                 className="hidden"
               />
 
@@ -858,7 +898,9 @@ const TaskDetails = () => {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading || attachments.length >= 5}
+                  disabled={
+                    !canUpdateTask || uploading || attachments.length >= 5
+                  }
                   className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-white px-3.5 text-xs font-medium text-[#18211D] transition hover:border-[#BFD8C7] hover:bg-[#EAF1EC] hover:text-[#315C4B] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Paperclip size={14} />
@@ -885,7 +927,7 @@ const TaskDetails = () => {
                       <button
                         type="button"
                         onClick={handleUploadFiles}
-                        disabled={uploading}
+                        disabled={!canUpdateTask || uploading}
                         className="flex h-9 items-center gap-2 rounded-lg bg-[#315C4B] px-3.5 text-xs font-medium text-white transition hover:bg-[#274D3F] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {uploading ? (
@@ -959,7 +1001,11 @@ const TaskDetails = () => {
                           attachment.url
                         }
                         attachment={attachment}
-                        onDelete={() => handleDeleteAttachment(attachment._id)}
+                        onDelete={
+                          canUpdateTask
+                            ? () => handleDeleteAttachment(attachment._id)
+                            : undefined
+                        }
                       />
                     ))}
                   </div>
@@ -1255,7 +1301,6 @@ const TaskDetails = () => {
         </section>
 
         <aside className="space-y-6">
-
           <section className="border border-[#DDE3DF] bg-white">
             <div className="border-b border-[#E7EBE8] p-5">
               <h2 className="text-lg font-semibold text-[#18211D]">
@@ -1414,7 +1459,7 @@ const TaskDetails = () => {
                   name="title"
                   value={formData.title}
                   onChange={handleChange}
-                  disabled={saving}
+                  disabled={saving || !canAssignTask}
                   className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7] disabled:bg-[#F7F8F6]"
                 />
               </div>
@@ -1630,16 +1675,25 @@ const UserAvatar = ({ user }) => {
   );
 };
 
-const StatusOption = ({ active, icon, label, onClick }) => {
+const getWorkspaceMemberRole = (workspace, user) => {
+  if (!workspace || !user || !Array.isArray(workspace.members)) return "member";
+  const member = workspace.members.find(
+    (item) => getId(item.user) === getId(user),
+  );
+  return member?.role || "member";
+};
+
+const StatusOption = ({ active, icon, label, onClick, disabled = false }) => {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`flex h-12 items-center gap-3 rounded-lg border px-4 text-sm font-medium transition ${
         active
           ? "border-[#315C4B] bg-[#EAF1EC] text-[#315C4B]"
           : "border-[#D6DDD8] bg-white text-[#68746E] hover:border-[#BFD8C7] hover:bg-[#F7F8F6]"
-      }`}
+      } ${disabled ? "cursor-not-allowed opacity-50 hover:border-[#D6DDD8] hover:bg-white" : ""}`}
     >
       {icon}
 
@@ -1746,7 +1800,7 @@ const AttachmentRow = ({ attachment, onDelete }) => {
         </a>
       )}
 
-      {attachment._id && (
+      {attachment._id && onDelete && (
         <button
           type="button"
           onClick={onDelete}

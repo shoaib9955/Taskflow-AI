@@ -66,8 +66,10 @@ export const addMemberSchema = Joi.object({
   }).required(),
 
   body: Joi.object({
-    userId: objectId.required().messages({
-      "any.required": "User ID is required",
+    email: Joi.string().trim().lowercase().email().required().messages({
+      "string.empty": "User email is required",
+      "string.email": "Please enter a valid email address",
+      "any.required": "User email is required",
     }),
 
     role: Joi.string().valid("admin", "manager", "member").default("member"),

@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 
 import api from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
+import { useWorkspace } from "../../context/WorkspaceContext";
 
 const initialTaskForm = {
   title: "",
@@ -32,6 +34,8 @@ const initialTaskForm = {
 const ProjectDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
+  const { user } = useAuth();
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -66,6 +70,7 @@ const ProjectDetail = () => {
         api.get(`/projects/${id}`),
         api.get("/tasks", {
           params: {
+            workspace: currentWorkspace._id,
             project: id,
             page: 1,
             limit: 100,
@@ -89,10 +94,18 @@ const ProjectDetail = () => {
   };
 
   useEffect(() => {
-    if (id) {
-      fetchProjectData();
+    if (!id || workspaceLoading) {
+      return;
     }
-  }, [id]);
+
+    if (!currentWorkspace?._id) {
+      setError("No workspace selected.");
+      setLoading(false);
+      return;
+    }
+
+    fetchProjectData();
+  }, [id, currentWorkspace?._id, workspaceLoading]);
 
   const handleTaskChange = (event) => {
     const { name, value } = event.target;
@@ -219,7 +232,7 @@ const ProjectDetail = () => {
           title,
           description,
           project: id,
-          workspace: getId(project?.workspace),
+          workspace: currentWorkspace._id,
           assignedTo: taskForm.assignedTo || null,
           status: taskForm.status,
           priority: taskForm.priority,
@@ -251,6 +264,7 @@ const ProjectDetail = () => {
     try {
       const response = await api.get("/tasks", {
         params: {
+          workspace: currentWorkspace._id,
           project: id,
           page: 1,
           limit: 100,
@@ -258,8 +272,7 @@ const ProjectDetail = () => {
       });
 
       setTasks(response.data.data?.tasks || []);
-    } catch (error) {
-    }
+    } catch (error) {}
   };
 
   const handleStatusChange = async (task, newStatus) => {
@@ -392,9 +405,14 @@ const ProjectDetail = () => {
 
   const members = project.members || [];
 
+  const currentWorkspaceMember = currentWorkspace?.members?.find(
+    (member) => getId(member.user) === getId(user),
+  );
+  const workspaceRole = currentWorkspaceMember?.role || "member";
+  const canCreateTask = ["owner", "admin", "manager"].includes(workspaceRole);
+
   return (
     <div className="w-full">
-
       <button
         type="button"
         onClick={() => navigate("/projects")}
@@ -495,7 +513,6 @@ const ProjectDetail = () => {
       </section>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-
         <section className="min-w-0">
           <div className="border border-[#DDE3DF] bg-white">
             <div className="border-b border-[#E7EBE8] p-5">
@@ -510,14 +527,16 @@ const ProjectDetail = () => {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={openCreateTaskModal}
-                  className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#315C4B] px-4 text-sm font-medium text-white transition hover:bg-[#274D3F]"
-                >
-                  <Plus size={17} />
-                  Create Task
-                </button>
+                {canCreateTask && (
+                  <button
+                    type="button"
+                    onClick={openCreateTaskModal}
+                    className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#315C4B] px-4 text-sm font-medium text-white transition hover:bg-[#274D3F]"
+                  >
+                    <Plus size={17} />
+                    Create Task
+                  </button>
+                )}
               </div>
 
               <div className="mt-5 flex flex-col gap-3 lg:flex-row">
@@ -576,7 +595,7 @@ const ProjectDetail = () => {
                       : "Try changing your search or filters."}
                   </p>
 
-                  {tasks.length === 0 && (
+                  {tasks.length === 0 && canCreateTask && (
                     <button
                       type="button"
                       onClick={openCreateTaskModal}
@@ -596,6 +615,7 @@ const ProjectDetail = () => {
                       onEdit={openEditTaskModal}
                       onDelete={openDeleteModal}
                       onStatusChange={handleStatusChange}
+                      user={user}
                     />
                   ))}
                 </div>
@@ -942,7 +962,22 @@ const ProjectDetail = () => {
   );
 };
 
-const TaskRow = ({ task, onEdit, onDelete, onStatusChange }) => {
+const getWorkspaceMemberRole = (workspace, user) => {
+  if (!workspace || !user || !Array.isArray(workspace.members)) return "member";
+  const member = workspace.members.find(
+    (item) => getId(item.user) === getId(user),
+  );
+  return member?.role || "member";
+};
+
+const TaskRow = ({ task, onEdit, onDelete, onStatusChange, user }) => {
+  const workspace = typeof task.workspace === "object" ? task.workspace : null;
+  const workspaceRole = getWorkspaceMemberRole(workspace, user);
+  const canUpdateTask =
+    ["owner", "admin", "manager"].includes(workspaceRole) ||
+    getId(task.createdBy) === getId(user) ||
+    getId(task.assignedTo) === getId(user);
+  const canDeleteTask = ["owner", "admin"].includes(workspaceRole);
   const isCompleted = task.status === "completed";
 
   const assignedUser =
@@ -957,7 +992,8 @@ const TaskRow = ({ task, onEdit, onDelete, onStatusChange }) => {
             onClick={() =>
               onStatusChange(task, isCompleted ? "todo" : "completed")
             }
-            className="mt-0.5 shrink-0 text-[#315C4B] transition hover:text-[#274D3F]"
+            disabled={!canUpdateTask}
+            className="mt-0.5 shrink-0 text-[#315C4B] transition hover:text-[#274D3F] disabled:cursor-not-allowed disabled:opacity-40"
             aria-label={
               isCompleted ? "Mark task as incomplete" : "Mark task as completed"
             }
@@ -1020,6 +1056,7 @@ const TaskRow = ({ task, onEdit, onDelete, onStatusChange }) => {
               <select
                 value={task.status || "todo"}
                 onChange={(event) => onStatusChange(task, event.target.value)}
+                disabled={!canUpdateTask}
                 className="h-9 w-full rounded-lg border border-[#D6DDD8] bg-white px-2.5 text-xs font-medium text-[#18211D] outline-none transition focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7] sm:w-auto"
               >
                 <option value="todo">To Do</option>
@@ -1030,23 +1067,27 @@ const TaskRow = ({ task, onEdit, onDelete, onStatusChange }) => {
               </select>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onEdit(task)}
-                  className="flex h-9 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-3 text-xs font-medium text-[#18211D] transition hover:border-[#BFD8C7] hover:bg-[#EAF1EC] hover:text-[#315C4B]"
-                >
-                  <Pencil size={14} />
-                  Edit
-                </button>
+                {canUpdateTask && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(task)}
+                    className="flex h-9 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-3 text-xs font-medium text-[#18211D] transition hover:border-[#BFD8C7] hover:bg-[#EAF1EC] hover:text-[#315C4B]"
+                  >
+                    <Pencil size={14} />
+                    Edit
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => onDelete(task)}
-                  className="flex h-9 items-center gap-2 rounded-lg border border-[#E1C7C5] bg-[#FBF3F2] px-3 text-xs font-medium text-[#8A2638] transition hover:bg-[#F8ECEB]"
-                >
-                  <Trash2 size={14} />
-                  Delete
-                </button>
+                {canDeleteTask && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(task)}
+                    className="flex h-9 items-center gap-2 rounded-lg border border-[#E1C7C5] bg-[#FBF3F2] px-3 text-xs font-medium text-[#8A2638] transition hover:bg-[#F8ECEB]"
+                  >
+                    <Trash2 size={14} />
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           </div>

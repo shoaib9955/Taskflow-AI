@@ -21,9 +21,11 @@ import {
 } from "lucide-react";
 
 import api from "../../services/api";
+import { useWorkspace } from "../../context/WorkspaceContext";
 
 const Activity = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
 
   const [activities, setActivities] = useState([]);
 
@@ -65,8 +67,7 @@ const Activity = () => {
       const data = response.data.data;
 
       setWorkspaces(data?.workspaces || data || []);
-    } catch (error) {
-    }
+    } catch (error) {}
   };
 
   const fetchActivities = async () => {
@@ -121,8 +122,33 @@ const Activity = () => {
   }, []);
 
   useEffect(() => {
-    fetchActivities();
-  }, [page, workspaceFilter, projectFilter, taskFilter, userFilter]);
+    if (workspaceLoading) {
+      return;
+    }
+
+    const selectedWorkspaceId = currentWorkspace?._id || "";
+
+    if (selectedWorkspaceId) {
+      setWorkspaceFilter(selectedWorkspaceId);
+      setPage(1);
+    } else {
+      setWorkspaceFilter("");
+    }
+  }, [workspaceLoading, currentWorkspace?._id]);
+
+  useEffect(() => {
+    if (!workspaceLoading) {
+      fetchActivities();
+    }
+  }, [
+    page,
+    workspaceFilter,
+    projectFilter,
+    taskFilter,
+    userFilter,
+    workspaceLoading,
+    currentWorkspace?._id,
+  ]);
 
   const filteredActivities = useMemo(() => {
     const value = search.toLowerCase().trim();
@@ -179,13 +205,23 @@ const Activity = () => {
   };
 
   const clearFilters = () => {
-    setWorkspaceFilter("");
+    const currentWorkspaceId = currentWorkspace?._id || "";
+
+    setWorkspaceFilter(currentWorkspaceId);
     setProjectFilter("");
     setTaskFilter("");
     setUserFilter("");
     setSearch("");
     setPage(1);
-    setSearchParams({});
+
+    setSearchParams(
+      currentWorkspaceId
+        ? {
+            workspace: currentWorkspaceId,
+            page: 1,
+          }
+        : {},
+    );
   };
 
   const hasFilters = Boolean(
@@ -222,6 +258,29 @@ const Activity = () => {
     setSearchParams(params);
   };
 
+  if (workspaceLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <p className="text-sm text-[#68746E]">Loading workspace...</p>
+      </div>
+    );
+  }
+
+  if (!currentWorkspace) {
+    return (
+      <div className="w-full">
+        <div className="border border-[#DDE3DF] bg-white p-8 text-center">
+          <h2 className="text-lg font-semibold text-[#18211D]">
+            No workspace selected
+          </h2>
+          <p className="mt-2 text-sm text-[#68746E]">
+            Create or select a workspace to view its activity.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -232,10 +291,9 @@ const Activity = () => {
 
   return (
     <div className="w-full">
-
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-[#68746E]">Workspace</p>
+          <p className="text-sm text-[#68746E]">{currentWorkspace.name}</p>
 
           <h1 className="mt-1 text-3xl font-semibold text-[#18211D]">
             Activity
@@ -326,8 +384,17 @@ const Activity = () => {
                   onChange={(event) => setWorkspaceFilter(event.target.value)}
                   className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7]"
                 >
-                  <option value="">All workspaces</option>
-
+                  <select
+                    value={workspaceFilter}
+                    onChange={(event) => setWorkspaceFilter(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7]"
+                  >
+                    {currentWorkspace && (
+                      <option value={currentWorkspace._id}>
+                        {currentWorkspace.name}
+                      </option>
+                    )}
+                  </select>
                   {workspaces.map((workspace) => (
                     <option key={workspace._id} value={workspace._id}>
                       {workspace.name}
@@ -492,7 +559,6 @@ const ActivityItem = ({ activity }) => {
   return (
     <div className="p-5 transition hover:bg-[#FAFBFA]">
       <div className="flex items-start gap-3">
-
         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#DCEBDF] text-sm font-semibold text-[#315C4B]">
           {user?.avatar ? (
             <img
@@ -506,7 +572,6 @@ const ActivityItem = ({ activity }) => {
         </div>
 
         <div className="min-w-0 flex-1">
-
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <p className="text-sm leading-6 text-[#18211D]">

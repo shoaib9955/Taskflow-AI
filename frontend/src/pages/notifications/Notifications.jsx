@@ -133,6 +133,8 @@ const Notifications = () => {
             : notification,
         ),
       );
+
+      window.dispatchEvent(new Event("taskflow-notifications-changed"));
     } catch (error) {
       setError(
         error.response?.data?.message || "Failed to mark notification as read.",
@@ -155,6 +157,8 @@ const Notifications = () => {
           readAt: notification.readAt || new Date().toISOString(),
         })),
       );
+
+      window.dispatchEvent(new Event("taskflow-notifications-changed"));
     } catch (error) {
       setError(
         error.response?.data?.message ||
@@ -185,6 +189,8 @@ const Notifications = () => {
         ...previous,
         total: Math.max(previous.total - 1, 0),
       }));
+
+      window.dispatchEvent(new Event("taskflow-notifications-changed"));
     } catch (error) {
       setError(
         error.response?.data?.message || "Failed to delete notification.",
@@ -231,7 +237,6 @@ const Notifications = () => {
 
   return (
     <div className="w-full">
-
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm text-[#68746E]">Updates</p>
@@ -263,6 +268,7 @@ const Notifications = () => {
               className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#315C4B] px-4 text-sm font-medium text-white transition hover:bg-[#274D3F] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <CheckCheck size={16} />
+
               {actionLoading === "mark-all" ? "Updating..." : "Mark all read"}
             </button>
           )}
@@ -436,7 +442,6 @@ const NotificationItem = ({
       }`}
     >
       <div className="flex items-start gap-3">
-
         <div
           className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${typeConfig.bg} ${typeConfig.text}`}
         >
@@ -625,12 +630,14 @@ const getNotificationType = (type) => {
       bg: "bg-[#EAF1EC]",
       text: "text-[#315C4B]",
     },
+
     "comment-added": {
       icon: <MessageSquare size={19} />,
       bg: "bg-[#F4F6F2]",
       text: "text-[#68746E]",
     },
   };
+
   return (
     configs[type] || {
       icon: <Bell size={19} />,

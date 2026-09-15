@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FolderKanban, Plus, X, Search, Pencil, Trash2 } from "lucide-react";
 
 import api from "../../services/api";
+import { useWorkspace } from "../../context/WorkspaceContext";
 
 const initialFormData = {
   name: "",
@@ -16,6 +17,7 @@ const initialFormData = {
 
 const Projects = () => {
   const navigate = useNavigate();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
 
   const [projects, setProjects] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
@@ -47,7 +49,13 @@ const Projects = () => {
       setError("");
 
       const [projectsResponse, workspacesResponse] = await Promise.all([
-        api.get("/projects"),
+        api.get("/projects", {
+          params: {
+            workspace: currentWorkspace?._id,
+            page: 1,
+            limit: 100,
+          },
+        }),
         api.get("/workspaces"),
       ]);
 
@@ -64,8 +72,10 @@ const Projects = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!workspaceLoading) {
+      fetchData();
+    }
+  }, [workspaceLoading, currentWorkspace?._id]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -77,9 +87,15 @@ const Projects = () => {
   };
 
   const openCreateModal = () => {
+    if (!currentWorkspace?._id) {
+      setError("Please select a workspace first.");
+      return;
+    }
+
     setEditingProject(null);
     setFormData({
       ...initialFormData,
+      workspace: currentWorkspace._id,
     });
     setFormError("");
     setShowFormModal(true);
@@ -145,8 +161,8 @@ const Projects = () => {
       return;
     }
 
-    if (!editingProject && !formData.workspace) {
-      setFormError("Please select a workspace.");
+    if (!editingProject && !currentWorkspace?._id) {
+      setFormError("Please select a workspace first.");
       return;
     }
 
@@ -185,13 +201,11 @@ const Projects = () => {
             project._id === updatedProject._id ? updatedProject : project,
           ),
         );
-      }
-
-      else {
+      } else {
         const createData = {
           name,
           description,
-          workspace: formData.workspace,
+          workspace: currentWorkspace._id,
           status: formData.status,
           priority: formData.priority,
           startDate: formData.startDate || null,
@@ -261,7 +275,18 @@ const Projects = () => {
     navigate(`/projects/${project._id}`);
   };
 
-  const filteredProjects = projects.filter((project) => {
+  const currentWorkspaceId = currentWorkspace?._id || "";
+
+  const workspaceProjects = projects.filter((project) => {
+    const projectWorkspaceId =
+      typeof project.workspace === "object"
+        ? project.workspace?._id
+        : project.workspace;
+
+    return projectWorkspaceId === currentWorkspaceId;
+  });
+
+  const filteredProjects = workspaceProjects.filter((project) => {
     const projectName = project.name?.toLowerCase() || "";
 
     const searchValue = search.toLowerCase().trim();
@@ -275,6 +300,30 @@ const Projects = () => {
     return matchesSearch && matchesStatus && matchesPriority;
   });
 
+  if (workspaceLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <p className="text-sm text-[#68746E]">Loading workspace...</p>
+      </div>
+    );
+  }
+
+  if (!currentWorkspace) {
+    return (
+      <div className="w-full">
+        <div className="border border-[#DDE3DF] bg-white p-10 text-center">
+          <FolderKanban size={28} className="mx-auto text-[#315C4B]" />
+          <h2 className="mt-4 text-lg font-semibold text-[#18211D]">
+            No workspace selected
+          </h2>
+          <p className="mt-2 text-sm text-[#68746E]">
+            Create or select a workspace to manage projects.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -285,10 +334,9 @@ const Projects = () => {
 
   return (
     <div className="w-full">
-
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-[#68746E]">Workspace</p>
+          <p className="text-sm text-[#68746E]">{currentWorkspace.name}</p>
 
           <h1 className="mt-1 text-3xl font-semibold text-[#18211D]">
             Projects
@@ -316,7 +364,6 @@ const Projects = () => {
       )}
 
       <div className="mt-8 flex flex-col gap-3 lg:flex-row">
-
         <div className="relative flex-1">
           <Search
             size={17}
@@ -397,7 +444,6 @@ const Projects = () => {
                 }}
                 className="cursor-pointer border border-[#DDE3DF] bg-white p-5 transition hover:border-[#BFD8C7] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#BFD8C7]"
               >
-
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#EAF1EC] text-[#315C4B]">
@@ -435,7 +481,6 @@ const Projects = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-
                       <button
                         type="button"
                         onClick={(event) => {
@@ -474,7 +519,6 @@ const Projects = () => {
       {showFormModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
           <div className="my-8 w-full max-w-lg border border-[#DDE3DF] bg-white">
-
             <div className="flex items-center justify-between border-b border-[#E1E5E2] px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-[#18211D]">
@@ -543,21 +587,14 @@ const Projects = () => {
                     Workspace
                   </label>
 
-                  <select
-                    name="workspace"
-                    value={formData.workspace}
-                    onChange={handleChange}
-                    disabled={saving}
-                    className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none transition focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7] disabled:bg-[#F7F8F6]"
-                  >
-                    <option value="">Select workspace</option>
+                  <div className="flex h-10 items-center rounded-lg border border-[#E1E5E2] bg-[#F7F8F6] px-3 text-sm text-[#68746E]">
+                    {currentWorkspace.name}
+                  </div>
 
-                    {workspaces.map((workspace) => (
-                      <option key={workspace._id} value={workspace._id}>
-                        {workspace.name}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="mt-1.5 text-xs text-[#89938E]">
+                    This project will be created in the currently selected
+                    workspace.
+                  </p>
                 </div>
               )}
 
@@ -689,7 +726,6 @@ const Projects = () => {
       {showDeleteModal && deletingProject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md border border-[#DDE3DF] bg-white">
-
             <div className="border-b border-[#E1E5E2] px-5 py-4">
               <h2 className="text-lg font-semibold text-[#18211D]">
                 Delete Project

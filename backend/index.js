@@ -7,7 +7,6 @@ const handler = async (req, res) => {
 
     return app(req, res);
   } catch (error) {
-    console.error("Vercel API error:", error);
 
     return res.status(500).json({
       success: false,

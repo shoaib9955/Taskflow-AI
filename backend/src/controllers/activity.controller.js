@@ -16,6 +16,7 @@ export const getActivities = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, result, "Activities fetched successfully"));
 });
+
 export const getActivityById = asyncHandler(async (req, res) => {
   const activity = await getActivityByIdService(req.params.id, req.user._id);
 

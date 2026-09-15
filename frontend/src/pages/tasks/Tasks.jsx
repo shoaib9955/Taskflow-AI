@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import api from "../../services/api";
+import { useWorkspace } from "../../context/WorkspaceContext";
 
 const initialFormData = {
   title: "",
@@ -32,6 +33,7 @@ const initialFormData = {
 
 const Tasks = () => {
   const navigate = useNavigate();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
 
   const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -69,12 +71,19 @@ const Tasks = () => {
         await Promise.all([
           api.get("/tasks", {
             params: {
+              workspace: currentWorkspace._id,
               page: 1,
               limit: 100,
             },
           }),
 
-          api.get("/projects"),
+          api.get("/projects", {
+            params: {
+              workspace: currentWorkspace._id,
+              page: 1,
+              limit: 100,
+            },
+          }),
 
           api.get("/workspaces"),
         ]);
@@ -100,16 +109,34 @@ const Tasks = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!workspaceLoading) {
+      fetchData();
+    }
+  }, [workspaceLoading, currentWorkspace?._id]);
+
+  useEffect(() => {
+    setProjectFilter("");
+  }, [currentWorkspace?._id]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
 
-    setFormData((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+    if (name === "project") {
+      const selectedProject = projects.find((project) => project._id === value);
+
+      const workspaceId = getId(selectedProject?.workspace);
+
+      setFormData((previous) => ({
+        ...previous,
+        project: value,
+        workspace: workspaceId,
+      }));
+    } else {
+      setFormData((previous) => ({
+        ...previous,
+        [name]: value,
+      }));
+    }
 
     if (formError) {
       setFormError("");
@@ -196,7 +223,7 @@ const Tasks = () => {
     }
 
     if (!editingTask && !formData.workspace) {
-      return "Please select a workspace.";
+      return "Please select a project with a valid workspace.";
     }
 
     return "";
@@ -372,10 +399,30 @@ const Tasks = () => {
     }
   };
 
+  const currentWorkspaceId = currentWorkspace?._id || "";
+
+  const workspaceProjects = useMemo(() => {
+    if (!currentWorkspaceId) {
+      return [];
+    }
+
+    return projects.filter(
+      (project) => getId(project.workspace) === currentWorkspaceId,
+    );
+  }, [projects, currentWorkspaceId]);
+
+  const workspaceTasks = useMemo(() => {
+    if (!currentWorkspaceId) {
+      return [];
+    }
+
+    return tasks.filter((task) => getId(task.workspace) === currentWorkspaceId);
+  }, [tasks, currentWorkspaceId]);
+
   const filteredTasks = useMemo(() => {
     const searchValue = search.toLowerCase().trim();
 
-    return tasks.filter((task) => {
+    return workspaceTasks.filter((task) => {
       const title = task.title?.toLowerCase() || "";
 
       const description = task.description?.toLowerCase() || "";
@@ -398,19 +445,21 @@ const Tasks = () => {
         matchesSearch && matchesProject && matchesStatus && matchesPriority
       );
     });
-  }, [tasks, search, statusFilter, priorityFilter, projectFilter]);
+  }, [workspaceTasks, search, statusFilter, priorityFilter, projectFilter]);
 
   const stats = useMemo(() => {
     return {
-      total: tasks.length,
+      total: workspaceTasks.length,
 
-      todo: tasks.filter((task) => task.status === "todo").length,
+      todo: workspaceTasks.filter((task) => task.status === "todo").length,
 
-      inProgress: tasks.filter((task) => task.status === "in-progress").length,
+      inProgress: workspaceTasks.filter((task) => task.status === "in-progress")
+        .length,
 
-      completed: tasks.filter((task) => task.status === "completed").length,
+      completed: workspaceTasks.filter((task) => task.status === "completed")
+        .length,
     };
-  }, [tasks]);
+  }, [workspaceTasks]);
 
   if (loading) {
     return (
@@ -420,12 +469,34 @@ const Tasks = () => {
     );
   }
 
+  if (workspaceLoading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <p className="text-sm text-[#68746E]">Loading workspace...</p>
+      </div>
+    );
+  }
+
+  if (!currentWorkspace) {
+    return (
+      <div className="w-full">
+        <div className="border border-[#DDE3DF] bg-white p-8 text-center">
+          <h2 className="text-lg font-semibold text-[#18211D]">
+            No workspace selected
+          </h2>
+          <p className="mt-2 text-sm text-[#68746E]">
+            Create or select a workspace to view its tasks.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full">
-
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-[#68746E]">Workspace</p>
+          <p className="text-sm text-[#68746E]">{currentWorkspace.name}</p>
 
           <h1 className="mt-1 text-3xl font-semibold text-[#18211D]">
             My Tasks
@@ -511,7 +582,7 @@ const Tasks = () => {
           >
             <option value="">All Projects</option>
 
-            {projects.map((project) => (
+            {workspaceProjects.map((project) => (
               <option key={project._id} value={project._id}>
                 {project.name}
               </option>
@@ -569,12 +640,12 @@ const Tasks = () => {
             </h3>
 
             <p className="mt-2 text-sm text-[#68746E]">
-              {tasks.length === 0
-                ? "Create your first task to get started."
+              {workspaceTasks.length === 0
+                ? "Create your first task in this workspace to get started."
                 : "Try changing your search or filters."}
             </p>
 
-            {tasks.length === 0 && (
+            {workspaceTasks.length === 0 && (
               <button
                 type="button"
                 onClick={openCreateModal}
@@ -591,7 +662,7 @@ const Tasks = () => {
               <TaskCard
                 key={task._id}
                 task={task}
-                projects={projects}
+                projects={workspaceProjects}
                 onEdit={openEditModal}
                 onDelete={openDeleteModal}
                 onStatusChange={handleStatusChange}
@@ -684,7 +755,7 @@ const Tasks = () => {
                     >
                       <option value="">Select project</option>
 
-                      {projects.map((project) => (
+                      {workspaceProjects.map((project) => (
                         <option key={project._id} value={project._id}>
                           {project.name}
                         </option>
@@ -697,21 +768,12 @@ const Tasks = () => {
                       Workspace
                     </label>
 
-                    <select
-                      name="workspace"
-                      value={formData.workspace}
-                      onChange={handleChange}
-                      disabled={saving}
-                      className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7]"
-                    >
-                      <option value="">Select workspace</option>
-
-                      {workspaces.map((workspace) => (
-                        <option key={workspace._id} value={workspace._id}>
-                          {workspace.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex h-10 items-center rounded-lg border border-[#E1E5E2] bg-[#F7F8F6] px-3 text-sm text-[#68746E]">
+                      {getWorkspaceName(
+                        { workspace: formData.workspace },
+                        workspaces,
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -969,7 +1031,6 @@ const TaskCard = ({
       className="cursor-pointer p-5 transition hover:bg-[#FAFBFA] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#BFD8C7]"
     >
       <div className="flex items-start gap-3">
-
         <button
           type="button"
           onClick={(event) => {
@@ -987,7 +1048,6 @@ const TaskCard = ({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-
             <div className="min-w-0">
               <h3
                 className={`text-sm font-semibold ${

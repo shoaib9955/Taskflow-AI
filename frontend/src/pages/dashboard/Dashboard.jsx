@@ -13,9 +13,11 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import api from "../../services/api";
+import { useWorkspace } from "../../context/WorkspaceContext";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
 
   const [projects, setProjects] = useState([]);
 
@@ -26,13 +28,29 @@ const Dashboard = () => {
   const [error, setError] = useState("");
 
   const fetchDashboardData = async () => {
+    if (workspaceLoading || !currentWorkspace?._id) {
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
 
       const [projectsResponse, tasksResponse] = await Promise.all([
-        api.get("/projects"),
-        api.get("/tasks"),
+        api.get("/projects", {
+          params: {
+            workspace: currentWorkspace._id,
+            page: 1,
+            limit: 100,
+          },
+        }),
+        api.get("/tasks", {
+          params: {
+            workspace: currentWorkspace._id,
+            page: 1,
+            limit: 100,
+          },
+        }),
       ]);
 
       const projectsData = projectsResponse.data.data;
@@ -52,8 +70,12 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    if (workspaceLoading || !currentWorkspace?._id) {
+      return;
+    }
+
     fetchDashboardData();
-  }, []);
+  }, [currentWorkspace?._id, workspaceLoading]);
 
   const completedTasks = tasks.filter(
     (task) => task.status === "completed",
@@ -68,7 +90,7 @@ const Dashboard = () => {
   const completionPercentage =
     tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
-  if (loading) {
+  if (workspaceLoading || loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">

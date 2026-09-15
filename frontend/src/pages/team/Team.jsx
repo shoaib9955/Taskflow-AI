@@ -16,7 +16,7 @@ import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 
 const initialMemberForm = {
-  userId: "",
+  email: "",
   role: "member",
 };
 
@@ -32,9 +32,7 @@ const Team = () => {
   const [search, setSearch] = useState("");
 
   const [showAddModal, setShowAddModal] = useState(false);
-
   const [showRoleModal, setShowRoleModal] = useState(false);
-
   const [showRemoveModal, setShowRemoveModal] = useState(false);
 
   const [selectedMember, setSelectedMember] = useState(null);
@@ -55,13 +53,23 @@ const Team = () => {
       const response = await api.get("/workspaces");
 
       const data = response.data.data;
-
       const workspaceList = data?.workspaces || data || [];
 
       setWorkspaces(workspaceList);
 
       if (workspaceList.length > 0) {
-        setSelectedWorkspaceId((previous) => previous || workspaceList[0]._id);
+        setSelectedWorkspaceId((previous) => {
+          if (
+            previous &&
+            workspaceList.some((workspace) => workspace._id === previous)
+          ) {
+            return previous;
+          }
+
+          return workspaceList[0]._id;
+        });
+      } else {
+        setSelectedWorkspaceId("");
       }
     } catch (error) {
       setError(error.response?.data?.message || "Failed to load team.");
@@ -100,9 +108,7 @@ const Team = () => {
       const memberUser = typeof member.user === "object" ? member.user : null;
 
       const name = memberUser?.name?.toLowerCase() || "";
-
       const email = memberUser?.email?.toLowerCase() || "";
-
       const role = member.role?.toLowerCase() || "";
 
       return (
@@ -154,13 +160,15 @@ const Team = () => {
       return;
     }
 
-    if (!memberForm.userId.trim()) {
-      setFormError("User ID is required.");
+    const email = memberForm.email.trim().toLowerCase();
+
+    if (!email) {
+      setFormError("User email is required.");
       return;
     }
 
-    if (!/^[a-fA-F0-9]{24}$/.test(memberForm.userId.trim())) {
-      setFormError("Please enter a valid 24-character user ID.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFormError("Please enter a valid email address.");
       return;
     }
 
@@ -171,7 +179,7 @@ const Team = () => {
       const response = await api.post(
         `/workspaces/${selectedWorkspaceId}/members`,
         {
-          userId: memberForm.userId.trim(),
+          email,
           role: memberForm.role,
         },
       );
@@ -196,7 +204,7 @@ const Team = () => {
     setSelectedMember(member);
 
     setMemberForm({
-      userId: getId(member.user),
+      email: getMemberEmail(member),
       role: member.role || "member",
     });
 
@@ -315,17 +323,20 @@ const Team = () => {
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-sm text-[#68746E]">Loading team...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#E6D4D7] border-t-[#7F2435]" />
+          <p className="text-sm text-[#68746E]">Loading team...</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="w-full">
-
+      {}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm text-[#68746E]">Workspace</p>
+          <p className="text-sm font-medium text-[#7F2435]">Workspace</p>
 
           <h1 className="mt-1 text-3xl font-semibold text-[#18211D]">Team</h1>
 
@@ -338,7 +349,7 @@ const Team = () => {
           <button
             type="button"
             onClick={openAddModal}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#315C4B] px-4 text-sm font-medium text-white transition hover:bg-[#274D3F]"
+            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#7F2435] px-4 text-sm font-medium text-white transition hover:bg-[#681D2C] focus:outline-none focus:ring-2 focus:ring-[#D9B8BE] focus:ring-offset-2"
           >
             <Plus size={17} />
             Add Member
@@ -346,6 +357,7 @@ const Team = () => {
         )}
       </div>
 
+      {}
       {error && (
         <div className="mt-6 flex items-start justify-between gap-4 border border-[#E8C9C7] bg-[#F8ECEB] p-4">
           <p className="text-sm text-[#8A2638]">{error}</p>
@@ -353,15 +365,16 @@ const Team = () => {
           <button
             type="button"
             onClick={() => setError("")}
-            className="text-[#8A2638]"
+            className="text-[#8A2638] transition hover:text-[#681D2C]"
           >
             <X size={17} />
           </button>
         </div>
       )}
 
+      {}
       {workspaces.length > 0 && (
-        <div className="mt-6 border border-[#DDE3DF] bg-white p-4">
+        <div className="mt-6 border border-[#DDE3DF] bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#89938E]">
@@ -377,7 +390,7 @@ const Team = () => {
               <select
                 value={selectedWorkspaceId}
                 onChange={(event) => setSelectedWorkspaceId(event.target.value)}
-                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7] sm:w-64"
+                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none transition focus:border-[#7F2435] focus:ring-2 focus:ring-[#E8D3D7] sm:w-64"
               >
                 {workspaces.map((workspace) => (
                   <option key={workspace._id} value={workspace._id}>
@@ -390,6 +403,7 @@ const Team = () => {
         </div>
       )}
 
+      {}
       {selectedWorkspace && (
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
           <StatCard
@@ -412,16 +426,23 @@ const Team = () => {
         </div>
       )}
 
+      {}
       {selectedWorkspace ? (
-        <section className="mt-6 border border-[#DDE3DF] bg-white">
+        <section className="mt-6 overflow-hidden border border-[#DDE3DF] bg-white shadow-sm">
           <div className="border-b border-[#E7EBE8] p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-[#18211D]">
-                  Members
-                </h2>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#F3E5E8] text-[#7F2435]">
+                    <Users size={16} />
+                  </div>
 
-                <p className="mt-1 text-sm text-[#68746E]">
+                  <h2 className="text-lg font-semibold text-[#18211D]">
+                    Members
+                  </h2>
+                </div>
+
+                <p className="mt-2 text-sm text-[#68746E]">
                   {members.length} {members.length === 1 ? "member" : "members"}{" "}
                   in this workspace.
                 </p>
@@ -438,7 +459,7 @@ const Team = () => {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search members..."
-                  className="h-9 w-full rounded-lg border border-[#D6DDD8] bg-white pl-9 pr-3 text-xs text-[#18211D] outline-none placeholder:text-[#9AA49F] focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7]"
+                  className="h-9 w-full rounded-lg border border-[#D6DDD8] bg-white pl-9 pr-3 text-xs text-[#18211D] outline-none placeholder:text-[#9AA49F] transition focus:border-[#7F2435] focus:ring-2 focus:ring-[#E8D3D7]"
                 />
               </div>
             </div>
@@ -446,7 +467,7 @@ const Team = () => {
 
           {filteredMembers.length === 0 ? (
             <div className="p-10 text-center">
-              <Users size={30} className="mx-auto text-[#315C4B]" />
+              <Users size={30} className="mx-auto text-[#7F2435]" />
 
               <h3 className="mt-4 text-base font-semibold text-[#18211D]">
                 No members found
@@ -465,18 +486,16 @@ const Team = () => {
                   typeof member.user === "object" ? member.user : null;
 
                 const memberId = getId(member.user);
-
                 const isCurrentUser = memberId === user?._id;
-
                 const isOwner = member.role === "owner";
 
                 return (
                   <div
                     key={memberId}
-                    className="flex flex-col gap-4 p-5 transition hover:bg-[#FAFBFA] sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-4 p-5 transition hover:bg-[#FCFAFA] sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#DCEBDF] text-sm font-semibold text-[#315C4B]">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#F3E5E8] text-sm font-semibold text-[#7F2435]">
                         {memberUser?.avatar ? (
                           <img
                             src={memberUser.avatar}
@@ -495,7 +514,7 @@ const Team = () => {
                           </p>
 
                           {isCurrentUser && (
-                            <span className="rounded-full bg-[#EAF1EC] px-2 py-0.5 text-[10px] font-medium text-[#315C4B]">
+                            <span className="rounded-full bg-[#F3E5E8] px-2 py-0.5 text-[10px] font-medium text-[#7F2435]">
                               You
                             </span>
                           )}
@@ -515,7 +534,7 @@ const Team = () => {
                           <button
                             type="button"
                             onClick={() => openRoleModal(member)}
-                            className="flex h-9 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-3 text-xs font-medium text-[#18211D] transition hover:border-[#BFD8C7] hover:bg-[#EAF1EC] hover:text-[#315C4B]"
+                            className="flex h-9 items-center gap-2 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-3 text-xs font-medium text-[#18211D] transition hover:border-[#D9B8BE] hover:bg-[#F3E5E8] hover:text-[#7F2435]"
                           >
                             <Pencil size={14} />
                             Role
@@ -539,8 +558,8 @@ const Team = () => {
           )}
         </section>
       ) : (
-        <div className="mt-6 border border-[#DDE3DF] bg-white p-10 text-center">
-          <Users size={30} className="mx-auto text-[#315C4B]" />
+        <div className="mt-6 border border-[#DDE3DF] bg-white p-10 text-center shadow-sm">
+          <Users size={30} className="mx-auto text-[#7F2435]" />
 
           <h2 className="mt-4 text-lg font-semibold text-[#18211D]">
             No workspace found
@@ -552,6 +571,7 @@ const Team = () => {
         </div>
       )}
 
+      {}
       {showAddModal && (
         <Modal
           title="Add Member"
@@ -564,20 +584,22 @@ const Team = () => {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-[#18211D]">
-                User ID
+                Email
               </label>
 
               <input
-                name="userId"
-                value={memberForm.userId}
+                name="email"
+                type="email"
+                value={memberForm.email}
                 onChange={handleMemberFormChange}
-                placeholder="Enter 24-character user ID"
+                placeholder="Enter user's email address"
                 disabled={saving}
-                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none placeholder:text-[#9AA49F] focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7] disabled:bg-[#F7F8F6]"
+                autoComplete="off"
+                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none placeholder:text-[#9AA49F] transition focus:border-[#7F2435] focus:ring-2 focus:ring-[#E8D3D7] disabled:bg-[#F7F8F6]"
               />
 
               <p className="mt-1.5 text-xs text-[#89938E]">
-                The user must already exist in the system.
+                The user must already have a TaskFlow account.
               </p>
             </div>
 
@@ -591,12 +613,10 @@ const Team = () => {
                 value={memberForm.role}
                 onChange={handleMemberFormChange}
                 disabled={saving}
-                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7]"
+                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none transition focus:border-[#7F2435] focus:ring-2 focus:ring-[#E8D3D7]"
               >
                 <option value="member">Member</option>
-
                 <option value="manager">Manager</option>
-
                 <option value="admin">Admin</option>
               </select>
             </div>
@@ -611,6 +631,7 @@ const Team = () => {
         </Modal>
       )}
 
+      {}
       {showRoleModal && selectedMember && (
         <Modal
           title="Change Member Role"
@@ -622,16 +643,24 @@ const Team = () => {
             {formError && <ErrorBox message={formError} />}
 
             <div className="flex items-center gap-3 border border-[#E1E5E2] bg-[#F7F8F6] p-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#DCEBDF] text-sm font-semibold text-[#315C4B]">
-                {getMemberName(selectedMember).charAt(0).toUpperCase()}
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-[#F3E5E8] text-sm font-semibold text-[#7F2435]">
+                {getMemberAvatar(selectedMember) ? (
+                  <img
+                    src={getMemberAvatar(selectedMember)}
+                    alt={getMemberName(selectedMember)}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  getMemberName(selectedMember).charAt(0).toUpperCase()
+                )}
               </div>
 
-              <div>
-                <p className="text-sm font-medium text-[#18211D]">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-[#18211D]">
                   {getMemberName(selectedMember)}
                 </p>
 
-                <p className="mt-1 text-xs text-[#89938E]">
+                <p className="mt-1 truncate text-xs text-[#89938E]">
                   {getMemberEmail(selectedMember)}
                 </p>
               </div>
@@ -647,12 +676,10 @@ const Team = () => {
                 value={memberForm.role}
                 onChange={handleMemberFormChange}
                 disabled={saving}
-                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none focus:border-[#315C4B] focus:ring-2 focus:ring-[#BFD8C7]"
+                className="h-10 w-full rounded-lg border border-[#D6DDD8] bg-white px-3 text-sm text-[#18211D] outline-none transition focus:border-[#7F2435] focus:ring-2 focus:ring-[#E8D3D7]"
               >
                 <option value="member">Member</option>
-
                 <option value="manager">Manager</option>
-
                 <option value="admin">Admin</option>
               </select>
             </div>
@@ -667,6 +694,7 @@ const Team = () => {
         </Modal>
       )}
 
+      {}
       {showRemoveModal && selectedMember && (
         <Modal
           title="Remove Member"
@@ -691,7 +719,7 @@ const Team = () => {
               type="button"
               onClick={closeRemoveModal}
               disabled={removing}
-              className="h-10 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-4 text-sm font-medium text-[#18211D] hover:bg-[#EAF1EC] disabled:opacity-50"
+              className="h-10 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-4 text-sm font-medium text-[#18211D] transition hover:bg-[#F3E5E8] hover:text-[#7F2435] disabled:opacity-50"
             >
               Cancel
             </button>
@@ -700,7 +728,7 @@ const Team = () => {
               type="button"
               onClick={handleRemoveMember}
               disabled={removing}
-              className="h-10 rounded-lg bg-[#8A2638] px-4 text-sm font-medium text-white hover:bg-[#742030] disabled:opacity-60"
+              className="h-10 rounded-lg bg-[#7F2435] px-4 text-sm font-medium text-white transition hover:bg-[#681D2C] disabled:opacity-60"
             >
               {removing ? "Removing..." : "Remove Member"}
             </button>
@@ -714,7 +742,7 @@ const Team = () => {
 const Modal = ({ title, description, onClose, disabled, children }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-      <div className="my-8 w-full max-w-md border border-[#DDE3DF] bg-white">
+      <div className="my-8 w-full max-w-md overflow-hidden rounded-xl border border-[#DDE3DF] bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[#E1E5E2] px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold text-[#18211D]">{title}</h2>
@@ -726,7 +754,7 @@ const Modal = ({ title, description, onClose, disabled, children }) => {
             type="button"
             onClick={onClose}
             disabled={disabled}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#68746E] hover:bg-[#EAF1EC] hover:text-[#315C4B] disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#68746E] transition hover:bg-[#F3E5E8] hover:text-[#7F2435] disabled:opacity-50"
           >
             <X size={19} />
           </button>
@@ -745,7 +773,7 @@ const ModalActions = ({ onCancel, loading, submitText, loadingText }) => {
         type="button"
         onClick={onCancel}
         disabled={loading}
-        className="h-10 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-4 text-sm font-medium text-[#18211D] hover:bg-[#EAF1EC] disabled:opacity-50"
+        className="h-10 rounded-lg border border-[#D6DDD8] bg-[#F7F8F6] px-4 text-sm font-medium text-[#18211D] transition hover:bg-[#F3E5E8] hover:text-[#7F2435] disabled:opacity-50"
       >
         Cancel
       </button>
@@ -753,7 +781,7 @@ const ModalActions = ({ onCancel, loading, submitText, loadingText }) => {
       <button
         type="submit"
         disabled={loading}
-        className="h-10 rounded-lg bg-[#315C4B] px-4 text-sm font-medium text-white hover:bg-[#274D3F] disabled:opacity-60"
+        className="h-10 rounded-lg bg-[#7F2435] px-4 text-sm font-medium text-white transition hover:bg-[#681D2C] disabled:opacity-60"
       >
         {loading ? loadingText : submitText}
       </button>
@@ -771,11 +799,11 @@ const ErrorBox = ({ message }) => {
 
 const StatCard = ({ label, value, icon }) => {
   return (
-    <div className="border border-[#DDE3DF] bg-white p-4">
+    <div className="border border-[#DDE3DF] bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-[#89938E]">{label}</span>
 
-        <span className="text-[#315C4B]">{icon}</span>
+        <span className="text-[#7F2435]">{icon}</span>
       </div>
 
       <p className="mt-3 text-2xl font-semibold text-[#18211D]">{value}</p>
@@ -788,19 +816,19 @@ const RoleBadge = ({ role }) => {
     owner: {
       label: "Owner",
       icon: <Crown size={13} />,
-      className: "bg-[#F5F0E8] text-[#79633F]",
+      className: "bg-[#F5E9E1] text-[#79552F]",
     },
 
     admin: {
       label: "Admin",
       icon: <ShieldCheck size={13} />,
-      className: "bg-[#EAF1EC] text-[#315C4B]",
+      className: "bg-[#F3E5E8] text-[#7F2435]",
     },
 
     manager: {
       label: "Manager",
       icon: <BriefcaseBusiness size={13} />,
-      className: "bg-[#EAF1EC] text-[#315C4B]",
+      className: "bg-[#F3E5E8] text-[#7F2435]",
     },
 
     member: {
@@ -848,6 +876,14 @@ const getMemberEmail = (member) => {
   }
 
   return "No email available";
+};
+
+const getMemberAvatar = (member) => {
+  if (typeof member?.user === "object") {
+    return member.user.avatar || "";
+  }
+
+  return "";
 };
 
 export default Team;

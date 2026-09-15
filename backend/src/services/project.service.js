@@ -3,6 +3,24 @@ import Workspace from "../models/Workspace.js";
 import ApiError from "../utils/ApiError.js";
 import { createActivity } from "./activity.service.js";
 
+const getWorkspaceForUser = async (workspaceId, userId) => {
+  if (!workspaceId) {
+    throw new ApiError(400, "Workspace is required");
+  }
+
+  const workspace = await Workspace.findOne({
+    _id: workspaceId,
+    isActive: true,
+    "members.user": userId,
+  });
+
+  if (!workspace) {
+    throw new ApiError(403, "You do not have access to this workspace");
+  }
+
+  return workspace;
+};
+
 export const createProject = async ({
   name,
   description,
@@ -14,10 +32,14 @@ export const createProject = async ({
   dueDate,
   createdBy,
 }) => {
-  const workspaceExists = await Workspace.findById(workspace);
+  const workspaceExists = await Workspace.findOne({
+    _id: workspace,
+    isActive: true,
+    "members.user": createdBy,
+  });
 
-  if (!workspaceExists || !workspaceExists.isActive) {
-    throw new ApiError(404, "Workspace not found");
+  if (!workspaceExists) {
+    throw new ApiError(403, "You do not have access to this workspace");
   }
 
   const currentMember = workspaceExists.members.find(
@@ -26,6 +48,10 @@ export const createProject = async ({
 
   if (!currentMember) {
     throw new ApiError(403, "You are not a member of this workspace");
+  }
+
+  if (!["owner", "admin", "manager"].includes(currentMember.role)) {
+    throw new ApiError(403, "You do not have permission to create a project");
   }
 
   const validMembers = members.filter((memberId) =>
@@ -72,25 +98,38 @@ export const getProjects = async ({
   priority,
   userId,
 }) => {
-  const filter = {};
-
-  if (workspace) {
-    const workspaceExists = await Workspace.findById(workspace);
-
-    if (!workspaceExists || !workspaceExists.isActive) {
-      throw new ApiError(404, "Workspace not found");
-    }
-
-    const isMember = workspaceExists.members.some(
-      (member) => member.user.toString() === userId.toString(),
-    );
-
-    if (!isMember) {
-      throw new ApiError(403, "You do not have access to this workspace");
-    }
-
-    filter.workspace = workspace;
+  if (!userId) {
+    throw new ApiError(401, "Authentication required");
   }
+
+  
+  if (workspace) {
+    await getWorkspaceForUser(workspace, userId);
+  }
+
+  
+  const accessibleWorkspaces = await Workspace.find({
+    isActive: true,
+    "members.user": userId,
+  }).select("_id");
+
+  const accessibleWorkspaceIds = accessibleWorkspaces.map((item) => item._id);
+
+  if (accessibleWorkspaceIds.length === 0) {
+    return {
+      projects: [],
+      pagination: {
+        page: 1,
+        limit: Math.min(Math.max(Number(limit) || 10, 1), 100),
+        total: 0,
+        totalPages: 0,
+      },
+    };
+  }
+
+  const filter = {
+    workspace: workspace ? workspace : { $in: accessibleWorkspaceIds },
+  };
 
   if (status) {
     filter.status = status;
@@ -107,7 +146,6 @@ export const getProjects = async ({
   }
 
   const currentPage = Math.max(Number(page) || 1, 1);
-
   const currentLimit = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
   const skip = (currentPage - 1) * currentLimit;
@@ -126,7 +164,6 @@ export const getProjects = async ({
 
   return {
     projects,
-
     pagination: {
       page: currentPage,
       limit: currentLimit,
@@ -143,17 +180,13 @@ export const getProjectById = async (projectId, userId) => {
     throw new ApiError(404, "Project not found");
   }
 
-  const workspace = await Workspace.findById(project.workspace);
+  const workspace = await Workspace.findOne({
+    _id: project.workspace,
+    isActive: true,
+    "members.user": userId,
+  });
 
-  if (!workspace || !workspace.isActive) {
-    throw new ApiError(404, "Workspace not found");
-  }
-
-  const currentMember = workspace.members.find(
-    (member) => member.user.toString() === userId.toString(),
-  );
-
-  if (!currentMember) {
+  if (!workspace) {
     throw new ApiError(403, "You do not have access to this project");
   }
 
@@ -176,17 +209,20 @@ export const getProjectById = async (projectId, userId) => {
 };
 
 export const updateProject = async (projectId, updateData, updatedBy) => {
-
   const project = await Project.findById(projectId);
 
   if (!project) {
     throw new ApiError(404, "Project not found");
   }
 
-  const workspace = await Workspace.findById(project.workspace);
+  const workspace = await Workspace.findOne({
+    _id: project.workspace,
+    isActive: true,
+    "members.user": updatedBy,
+  });
 
-  if (!workspace || !workspace.isActive) {
-    throw new ApiError(404, "Workspace not found");
+  if (!workspace) {
+    throw new ApiError(403, "You do not have access to this project");
   }
 
   const currentMember = workspace.members.find(
@@ -218,7 +254,10 @@ export const updateProject = async (projectId, updateData, updatedBy) => {
   const changes = {};
 
   for (const field of allowedFields) {
-    if (Object.prototype.hasOwnProperty.call(updateData, field)) {
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, field) &&
+      field !== "members"
+    ) {
       const oldValue = project[field];
       const newValue = updateData[field];
 
@@ -248,6 +287,15 @@ export const updateProject = async (projectId, updateData, updatedBy) => {
         400,
         "All project members must belong to the workspace",
       );
+    }
+
+    const oldMembers = project.members || [];
+
+    if (String(oldMembers) !== String(validMembers)) {
+      changes.members = {
+        from: oldMembers,
+        to: validMembers,
+      };
     }
 
     project.members = validMembers;
@@ -295,10 +343,14 @@ export const deleteProject = async (projectId, deletedBy) => {
     throw new ApiError(404, "Project not found");
   }
 
-  const workspace = await Workspace.findById(project.workspace);
+  const workspace = await Workspace.findOne({
+    _id: project.workspace,
+    isActive: true,
+    "members.user": deletedBy,
+  });
 
-  if (!workspace || !workspace.isActive) {
-    throw new ApiError(404, "Workspace not found");
+  if (!workspace) {
+    throw new ApiError(403, "You do not have access to this project");
   }
 
   const currentMember = workspace.members.find(

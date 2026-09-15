@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Bot,
+  BriefcaseBusiness,
   CheckCircle2,
   ClipboardList,
   FileText,
@@ -61,8 +62,10 @@ const Guide = () => {
       description: "Get a quick overview of your work and team activity.",
       steps: [
         "Open Dashboard from the sidebar.",
-        "Review your task statistics and overall progress.",
-        "Check recent tasks and projects.",
+        "The Dashboard shows data for your currently selected workspace.",
+        "Review your task statistics and overall progress for that workspace.",
+        "Check recent tasks and projects belonging to the selected workspace.",
+        "Switch workspaces from the sidebar to view another workspace's data.",
         "Select a task or project to open its details.",
       ],
     },
@@ -73,10 +76,12 @@ const Guide = () => {
       description: "Create and manage the projects your team is working on.",
       steps: [
         "Open Projects from the sidebar.",
-        "Click New Project and enter the project name and details.",
+        "Projects shown belong to your currently selected workspace.",
+        "Click New Project and enter the project name and details if you have permission.",
         "Save the project.",
         "Open a project to view its details, members, and tasks.",
-        "Use Edit or Delete when you need to manage the project.",
+        "Use Edit or Delete when your workspace role allows that action.",
+        "Switch workspaces from the sidebar to work with another workspace's projects.",
       ],
     },
     {
@@ -86,8 +91,9 @@ const Guide = () => {
       description: "Manage the work inside a specific project from one place.",
       steps: [
         "Open a project from the Projects page.",
+        "Confirm the project belongs to your currently selected workspace.",
         "Review project information, status, priority, dates, and members.",
-        "Use the task section to create and manage project tasks.",
+        "Use the task section to create and manage project tasks when you have permission.",
         "Search or filter tasks when the project has many tasks.",
         "Open any task to view its complete details.",
       ],
@@ -99,11 +105,13 @@ const Guide = () => {
       description: "Create, organize, assign, and track your team's work.",
       steps: [
         "Open My Tasks from the sidebar.",
-        "Click New Task.",
+        "Tasks shown belong to your currently selected workspace.",
+        "Click New Task if your workspace role allows task creation.",
         "Choose a project and enter the task title and description.",
         "Set priority, status, due date, tags, and assignee.",
         "Save the task.",
         "Use search and filters to quickly find tasks.",
+        "Switch workspaces from the sidebar to view tasks from another workspace you belong to.",
       ],
       tip: "Keep task titles short and specific so your team can understand the work quickly.",
     },
@@ -113,12 +121,12 @@ const Guide = () => {
       title: "Task Details",
       description: "Use the task detail page to manage one task completely.",
       steps: [
-        "Open a task from My Tasks or a Project.",
+        "Open a task from My Tasks or a Project in your current workspace.",
         "Review its project, workspace, assignee, priority, due date, and tags.",
-        "Edit the task whenever its requirements change.",
-        "Change the status as work progresses.",
-        "Assign the task to a project member when needed.",
-        "Delete the task when it is no longer required.",
+        "Workspace owners, admins, and managers can update tasks; task creators and assignees can also update their tasks.",
+        "Change the status as work progresses when you have update permission.",
+        "Workspace owners, admins, and managers can assign tasks to workspace/project members.",
+        "Workspace owners and admins can delete tasks.",
       ],
     },
     {
@@ -137,19 +145,38 @@ const Guide = () => {
       tip: "A task can contain up to 5 attachments, with a maximum size of 10 MB per file.",
     },
     {
+      id: "workspace",
+      icon: <BriefcaseBusiness size={19} />,
+      title: "Workspaces & Roles",
+      description:
+        "Keep team data separated while giving each member the right level of access.",
+      steps: [
+        "Use the workspace selector in the sidebar to choose the workspace you want to work in.",
+        "Only workspaces you belong to are available to you.",
+        "Your role is assigned separately inside each workspace, so the same user can have different roles in different workspaces.",
+        "Workspace roles are Owner, Admin, Manager, and Member.",
+        "The workspace owner has the highest workspace-level management permissions.",
+        "Admins can perform most workspace management actions, while managers have broader work-management permissions.",
+        "Members have access to workspace data but cannot perform restricted management actions.",
+        "Projects, tasks, activity, and other workspace-scoped data must stay within the selected workspace.",
+        "Creating a new workspace makes you its owner.",
+      ],
+      tip: "Changing the selected workspace changes the workspace context used by the application. It does not give you access to workspaces you do not belong to.",
+    },
+    {
       id: "team",
       icon: <Users size={19} />,
       title: "Team & Workspace",
       description: "Manage workspace members and their roles.",
       steps: [
         "Open Team from the sidebar.",
-        "Select your workspace.",
+        "Select the workspace you want to manage.",
         "Review workspace members and their roles.",
         "Owners and admins can add members.",
-        "Owners and admins can change member roles.",
-        "Owners and admins can remove members when necessary.",
+        "Owners and admins can change member roles, subject to role restrictions.",
+        "Owners and admins can remove members when necessary, subject to role restrictions.",
       ],
-      tip: "Workspace permissions control which team members can perform management actions.",
+      tip: "Workspace permissions control which team members can perform management actions. A user's role is specific to each workspace.",
     },
     {
       id: "activity",
@@ -244,7 +271,6 @@ const Guide = () => {
 
   return (
     <div className="min-h-full bg-[#F4F6F2]">
-
       <div className="border-b border-[#D6DDD8] bg-white">
         <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -282,7 +308,6 @@ const Guide = () => {
       </div>
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-
         <section className="border border-[#E1E5E2] bg-white">
           <div className="border-b border-[#E7EBE8] bg-[#F8ECEB] p-5 sm:p-6">
             <div className="flex items-start gap-3">

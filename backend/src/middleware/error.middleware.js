@@ -44,7 +44,7 @@ const errorHandler = (error, req, res, next) => {
       message = error.message;
     }
   } else {
-    console.error(error);
+
   }
 
   const response = {

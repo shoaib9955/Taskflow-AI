@@ -1,26 +1,70 @@
+import mongoose from "mongoose";
+
 import Task from "../models/Task.js";
 import Project from "../models/Project.js";
 import Workspace from "../models/Workspace.js";
-import ApiError from "../utils/ApiError.js";
-import { createNotification } from "./notification.service.js";
-import { createActivity } from "./activity.service.js";
-import { deleteFromCloudinary } from "./upload.service.js";
-const checkWorkspaceMember = async (workspaceId, userId) => {
-  const workspace = await Workspace.findById(workspaceId);
 
-  if (!workspace) {
-    throw new ApiError(404, "Workspace not found");
+import { createActivity } from "./activity.service.js";
+import { createNotification } from "./notification.service.js";
+
+import { uploadToCloudinary, deleteFromCloudinary } from "./upload.service.js";
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+const getWorkspaceForUser = async (workspaceId, userId) => {
+  if (!workspaceId || !isValidObjectId(workspaceId)) {
+    return null;
   }
 
-  const isMember = workspace.members.some(
-    (member) => member.user.toString() === userId.toString(),
+  return Workspace.findOne({
+    _id: workspaceId,
+    isActive: true,
+    "members.user": userId,
+  });
+};
+
+const getUserWorkspaceIds = async (userId) => {
+  const workspaces = await Workspace.find({
+    isActive: true,
+    "members.user": userId,
+  }).select("_id");
+
+  return workspaces.map((workspace) => workspace._id);
+};
+
+const getWorkspaceMemberRole = (workspace, userId) => {
+  const member = workspace.members.find(
+    (item) => item.user.toString() === userId.toString(),
   );
 
-  if (!isMember) {
-    throw new ApiError(403, "You are not a member of this workspace");
+  return member?.role || null;
+};
+
+const isWorkspaceMember = (workspace, userId) => {
+  return workspace.members.some(
+    (member) => member.user.toString() === userId.toString(),
+  );
+};
+
+const getProjectForWorkspace = async (projectId, workspaceId) => {
+  if (!projectId || !isValidObjectId(projectId)) {
+    return null;
   }
 
-  return workspace;
+  return Project.findOne({
+    _id: projectId,
+    workspace: workspaceId,
+  });
+};
+
+const isProjectMember = (project, userId) => {
+  if (!project) return false;
+
+  return project.members.some(
+    (member) => member.toString() === userId.toString(),
+  );
 };
 
 export const createTask = async ({
@@ -28,31 +72,39 @@ export const createTask = async ({
   description,
   project,
   workspace,
-  createdBy,
   assignedTo,
   status,
   priority,
   dueDate,
   tags,
+  attachments,
+  createdBy,
 }) => {
-  await checkWorkspaceMember(workspace, createdBy);
+  const workspaceDoc = await getWorkspaceForUser(workspace, createdBy);
 
-  const projectExists = await Project.findOne({
-    _id: project,
-    workspace,
-  });
+  if (!workspaceDoc) {
+    throw new Error("Workspace not found or access denied");
+  }
 
-  if (!projectExists) {
-    throw new ApiError(404, "Project not found in this workspace");
+  const workspaceRole = getWorkspaceMemberRole(workspaceDoc, createdBy);
+
+  if (!["owner", "admin", "manager"].includes(workspaceRole)) {
+    throw new Error("You do not have permission to create tasks");
+  }
+
+  const projectDoc = await getProjectForWorkspace(project, workspace);
+
+  if (!projectDoc) {
+    throw new Error("Project not found in this workspace");
   }
 
   if (assignedTo) {
-    const isProjectMember = projectExists.members.some(
-      (memberId) => memberId.toString() === assignedTo.toString(),
-    );
+    if (!isWorkspaceMember(workspaceDoc, assignedTo)) {
+      throw new Error("Assigned user is not a member of this workspace");
+    }
 
-    if (!isProjectMember) {
-      throw new ApiError(400, "Assigned user must be a project member");
+    if (!isProjectMember(projectDoc, assignedTo)) {
+      throw new Error("Assigned user is not a member of this project");
     }
   }
 
@@ -61,88 +113,147 @@ export const createTask = async ({
     description,
     project,
     workspace,
+    assignedTo: assignedTo || null,
+    status: status || "todo",
+    priority: priority || "medium",
+    dueDate: dueDate || null,
+    tags: tags || [],
+    attachments: attachments || [],
     createdBy,
-    assignedTo,
-    status,
-    priority,
-    dueDate,
-    tags,
   });
 
+  await task.populate([
+    {
+      path: "createdBy",
+      select: "name email",
+    },
+    {
+      path: "assignedTo",
+      select: "name email",
+    },
+    {
+      path: "project",
+      select: "name workspace",
+    },
+    {
+      path: "workspace",
+      select: "name",
+    },
+  ]);
+
+  
+
   await createActivity({
+    user: createdBy,
     workspace,
     project,
     task: task._id,
-    user: createdBy,
     action: "created",
     entityType: "task",
     entityId: task._id,
-    description: `Task "${task.title}" was created`,
+    description: `Created task "${task.title}"`,
   });
+
+  
+
+  if (assignedTo && assignedTo.toString() !== createdBy.toString()) {
+    await createNotification({
+      recipient: assignedTo,
+      sender: createdBy,
+      workspace,
+      project,
+      task: task._id,
+      type: "task_assigned",
+      message: `You were assigned task "${task.title}"`,
+    });
+  }
 
   return task;
 };
 
 export const getTasks = async ({
-  project,
+  userId,
   workspace,
+  project,
   assignedTo,
   status,
   priority,
   search,
-  page,
-  limit,
-  userId,
+  page = 1,
+  limit = 10,
 }) => {
+  
+
+  if (!userId) {
+    throw new Error("User authentication is required");
+  }
+
+  const accessibleWorkspaceIds = await getUserWorkspaceIds(userId);
+
+  if (accessibleWorkspaceIds.length === 0) {
+    return {
+      tasks: [],
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: 0,
+        pages: 0,
+      },
+    };
+  }
+
   const filter = {};
 
-  if (workspace) {
-    const workspaceExists = await Workspace.findById(workspace);
+  
 
-    if (!workspaceExists || !workspaceExists.isActive) {
-      throw new ApiError(404, "Workspace not found");
+  if (workspace) {
+    if (!isValidObjectId(workspace)) {
+      throw new Error("Invalid workspace ID");
     }
 
-    const isMember = workspaceExists.members.some((member) => {
-      const memberUserId = member.user?._id || member.user;
+    const hasAccess = accessibleWorkspaceIds.some(
+      (workspaceId) => workspaceId.toString() === workspace.toString(),
+    );
 
-      return memberUserId && memberUserId.toString() === userId.toString();
-    });
-
-    if (!isMember) {
-      throw new ApiError(403, "You do not have access to this workspace");
+    if (!hasAccess) {
+      throw new Error("You do not have access to this workspace");
     }
 
     filter.workspace = workspace;
+  } else {
+    
+
+    filter.workspace = {
+      $in: accessibleWorkspaceIds,
+    };
   }
 
+  
+
   if (project) {
-    const projectExists = await Project.findById(project);
-
-    if (!projectExists) {
-      throw new ApiError(404, "Project not found");
+    if (!isValidObjectId(project)) {
+      throw new Error("Invalid project ID");
     }
 
-    const workspaceExists = await Workspace.findById(projectExists.workspace);
-
-    if (!workspaceExists || !workspaceExists.isActive) {
-      throw new ApiError(404, "Workspace not found");
-    }
-
-    const isMember = workspaceExists.members.some((member) => {
-      const memberUserId = member.user?._id || member.user;
-
-      return memberUserId && memberUserId.toString() === userId.toString();
+    const projectDoc = await Project.findOne({
+      _id: project,
+      workspace: filter.workspace,
     });
 
-    if (!isMember) {
-      throw new ApiError(403, "You do not have access to this project");
+    if (!projectDoc) {
+      throw new Error("Project not found or access denied");
     }
 
     filter.project = project;
   }
 
+  
+
   if (assignedTo) {
+    if (!isValidObjectId(assignedTo)) {
+      throw new Error("Invalid assigned user ID");
+    }
+
     filter.assignedTo = assignedTo;
   }
 
@@ -154,26 +265,43 @@ export const getTasks = async ({
     filter.priority = priority;
   }
 
-  if (search) {
-    filter.$text = {
-      $search: search,
-    };
+  
+
+  if (search?.trim()) {
+    filter.$or = [
+      {
+        title: {
+          $regex: search.trim(),
+          $options: "i",
+        },
+      },
+      {
+        description: {
+          $regex: search.trim(),
+          $options: "i",
+        },
+      },
+    ];
   }
 
-  const currentPage = Math.max(Number(page) || 1, 1);
+  
 
-  const currentLimit = Math.min(Math.max(Number(limit) || 10, 1), 100);
+  const pageNumber = Math.max(Number(page) || 1, 1);
+  const limitNumber = Math.min(Math.max(Number(limit) || 10, 1), 100);
 
-  const skip = (currentPage - 1) * currentLimit;
+  const skip = (pageNumber - 1) * limitNumber;
 
   const [tasks, total] = await Promise.all([
     Task.find(filter)
-      .populate("createdBy", "name email avatar")
-      .populate("assignedTo", "name email avatar")
-      .populate("project", "name status priority")
-      .sort({ createdAt: -1 })
+      .populate("createdBy", "name email")
+      .populate("assignedTo", "name email")
+      .populate("project", "name workspace")
+      .populate("workspace", "name")
+      .sort({
+        createdAt: -1,
+      })
       .skip(skip)
-      .limit(currentLimit),
+      .limit(limitNumber),
 
     Task.countDocuments(filter),
   ]);
@@ -181,298 +309,220 @@ export const getTasks = async ({
   return {
     tasks,
     pagination: {
-      page: currentPage,
-      limit: currentLimit,
+      page: pageNumber,
+      limit: limitNumber,
       total,
-      totalPages: Math.ceil(total / currentLimit),
+      pages: Math.ceil(total / limitNumber),
     },
   };
 };
-export const getTaskById = async (taskId, userId) => {
-  const task = await Task.findById(taskId);
+
+export const getTaskById = async ({ taskId, userId }) => {
+  if (!isValidObjectId(taskId)) {
+    throw new Error("Invalid task ID");
+  }
+
+  const task = await Task.findById(taskId)
+    .populate("createdBy", "name email")
+    .populate("assignedTo", "name email")
+    .populate("project", "name workspace members")
+    .populate("workspace", "name members");
 
   if (!task) {
-    throw new ApiError(404, "Task not found");
+    throw new Error("Task not found");
   }
 
-  const workspace = await Workspace.findOne({
-    _id: task.workspace,
-    "members.user": userId,
-    isActive: true,
-  });
-
-  if (!workspace) {
-    throw new ApiError(403, "You do not have access to this task");
+  if (!task.workspace) {
+    throw new Error("Task workspace not found");
   }
 
-  await task.populate([
-    { path: "createdBy", select: "name email avatar" },
-    { path: "assignedTo", select: "name email avatar" },
-    { path: "project", select: "name status priority" },
-    { path: "workspace", select: "name" },
-  ]);
+  const hasAccess = isWorkspaceMember(task.workspace, userId);
+
+  if (!hasAccess) {
+    throw new Error("You do not have access to this task");
+  }
 
   return task;
 };
 
-export const updateTask = async (taskId, updateData, updatedBy) => {
+export const updateTask = async ({
+  taskId,
+  userId,
+  title,
+  description,
+  assignedTo,
+  status,
+  priority,
+  dueDate,
+  tags,
+  attachments,
+}) => {
+  if (!isValidObjectId(taskId)) {
+    throw new Error("Invalid task ID");
+  }
+
   const task = await Task.findById(taskId);
 
   if (!task) {
-    throw new ApiError(404, "Task not found");
+    throw new Error("Task not found");
   }
 
-  const workspace = await Workspace.findById(task.workspace);
+  const workspace = await getWorkspaceForUser(task.workspace, userId);
 
-  if (!workspace || !workspace.isActive) {
-    throw new ApiError(404, "Workspace not found");
+  if (!workspace) {
+    throw new Error("Workspace not found or access denied");
   }
 
-  const isMember = workspace.members.some((member) => {
-    const memberUserId = member.user?._id || member.user;
+  const workspaceRole = getWorkspaceMemberRole(workspace, userId);
 
-    return memberUserId && memberUserId.toString() === updatedBy.toString();
-  });
+  const isManagerLevel = ["owner", "admin", "manager"].includes(workspaceRole);
 
-  if (!isMember) {
-    throw new ApiError(403, "You do not have access to this task");
+  const isTaskOwner = task.createdBy?.toString() === userId.toString();
+
+  const isAssignee = task.assignedTo?.toString() === userId.toString();
+
+  
+
+  if (!isManagerLevel && !isTaskOwner && !isAssignee) {
+    throw new Error("You do not have permission to update this task");
   }
 
-  const oldValues = {
-    title: task.title,
-    description: task.description,
-    assignedTo: task.assignedTo,
-    status: task.status,
-    priority: task.priority,
-    dueDate: task.dueDate,
-    tags: task.tags,
-    attachments: task.attachments,
-  };
+  
 
-  const allowedUpdates = [
-    "title",
-    "description",
-    "assignedTo",
-    "status",
-    "priority",
-    "dueDate",
-    "tags",
-    "attachments",
-  ];
+  if (assignedTo !== undefined) {
+    if (assignedTo === null || assignedTo === "") {
+      task.assignedTo = null;
+    } else {
+      if (!isValidObjectId(assignedTo)) {
+        throw new Error("Invalid assigned user ID");
+      }
 
-  const updates = {};
+      if (!isManagerLevel) {
+        throw new Error("You do not have permission to reassign tasks");
+      }
 
-  for (const field of allowedUpdates) {
-    if (updateData[field] !== undefined) {
-      updates[field] = updateData[field];
+      if (!isWorkspaceMember(workspace, assignedTo)) {
+        throw new Error("Assigned user is not a member of this workspace");
+      }
+
+      const project = await getProjectForWorkspace(
+        task.project,
+        task.workspace,
+      );
+
+      if (!project) {
+        throw new Error("Project not found");
+      }
+
+      if (!isProjectMember(project, assignedTo)) {
+        throw new Error("Assigned user is not a member of this project");
+      }
+
+      task.assignedTo = assignedTo;
     }
   }
 
-  Object.assign(task, updates);
+  
 
-  if (
-    updates.status &&
-    updates.status === "completed" &&
-    task.completedAt === null
-  ) {
-    task.completedAt = new Date();
+  if (title !== undefined) {
+    task.title = title;
   }
 
-  if (updates.status && updates.status !== "completed") {
-    task.completedAt = null;
+  if (description !== undefined) {
+    task.description = description;
+  }
+
+  if (status !== undefined) {
+    task.status = status;
+
+    if (status === "completed") {
+      task.completedAt = new Date();
+    } else {
+      task.completedAt = null;
+    }
+  }
+
+  if (priority !== undefined) {
+    task.priority = priority;
+  }
+
+  if (dueDate !== undefined) {
+    task.dueDate = dueDate;
+  }
+
+  if (tags !== undefined) {
+    task.tags = tags;
+  }
+
+  if (attachments !== undefined) {
+    task.attachments = attachments;
   }
 
   await task.save();
-
-  const changedFields = [];
-
-  for (const field of allowedUpdates) {
-    if (updateData[field] !== undefined) {
-      changedFields.push(field);
-    }
-  }
-
-  await createActivity({
-    workspace: task.workspace,
-    project: task.project,
-    task: task._id,
-    user: updatedBy,
-    action: "updated",
-    entityType: "task",
-    entityId: task._id,
-    description: `Task "${task.title}" was updated`,
-    metadata: {
-      changedFields,
-      oldValues,
-      newValues: updates,
-    },
-  });
 
   await task.populate([
     {
       path: "createdBy",
-      select: "name email avatar",
+      select: "name email",
     },
     {
       path: "assignedTo",
-      select: "name email avatar",
+      select: "name email",
     },
     {
       path: "project",
-      select: "name status priority",
+      select: "name workspace",
+    },
+    {
+      path: "workspace",
+      select: "name",
     },
   ]);
 
-  return task;
-};
-export const deleteTask = async (taskId, deletedBy) => {
-  const task = await Task.findById(taskId);
-
-  if (!task) {
-    throw new ApiError(404, "Task not found");
-  }
-
-  const workspace = await Workspace.findOne({
-    _id: task.workspace,
-    "members.user": deletedBy,
-    isActive: true,
-  });
-
-  if (!workspace) {
-    throw new ApiError(403, "You do not have access to this task");
-  }
-
-  const member = workspace.members.find(
-    (item) => item.user.toString() === deletedBy.toString(),
-  );
-
-  if (!member || !["owner", "admin"].includes(member.role)) {
-    throw new ApiError(403, "Only workspace owner or admin can delete a task");
-  }
+  
 
   await createActivity({
+    user: userId,
     workspace: task.workspace,
     project: task.project,
     task: task._id,
-    user: deletedBy,
-    action: "deleted",
+    action: "updated",
     entityType: "task",
     entityId: task._id,
-    description: `Task "${task.title}" was deleted`,
+    description: `Updated task "${task.title}"`,
   });
-
-  await Task.findByIdAndDelete(taskId);
 
   return task;
 };
-export const assignTask = async (taskId, assignedTo, assignedBy) => {
+
+export const updateTaskStatus = async ({ taskId, userId, status }) => {
+  if (!isValidObjectId(taskId)) {
+    throw new Error("Invalid task ID");
+  }
+
   const task = await Task.findById(taskId);
 
   if (!task) {
-    throw new ApiError(404, "Task not found");
+    throw new Error("Task not found");
   }
 
-  const workspace = await Workspace.findOne({
-    _id: task.workspace,
-    "members.user": assignedBy,
-    isActive: true,
-  });
+  const workspace = await getWorkspaceForUser(task.workspace, userId);
 
   if (!workspace) {
-    throw new ApiError(403, "You do not have access to this task");
+    throw new Error("Workspace not found or access denied");
   }
 
-  const actor = workspace.members.find(
-    (member) => member.user.toString() === assignedBy.toString(),
-  );
+  const workspaceRole = getWorkspaceMemberRole(workspace, userId);
 
-  if (!actor || !["owner", "admin", "manager"].includes(actor.role)) {
-    throw new ApiError(403, "You do not have permission to assign this task");
+  const isManagerLevel = ["owner", "admin", "manager"].includes(workspaceRole);
+
+  const isTaskOwner = task.createdBy?.toString() === userId.toString();
+
+  const isAssignee = task.assignedTo?.toString() === userId.toString();
+
+  if (!isManagerLevel && !isTaskOwner && !isAssignee) {
+    throw new Error("You do not have permission to update this task");
   }
-
-  if (assignedTo) {
-    const isWorkspaceMember = workspace.members.some(
-      (member) => member.user.toString() === assignedTo.toString(),
-    );
-
-    if (!isWorkspaceMember) {
-      throw new ApiError(400, "Assigned user must be a workspace member");
-    }
-
-    const project = await Project.findOne({
-      _id: task.project,
-      workspace: task.workspace,
-    });
-
-    if (!project) {
-      throw new ApiError(404, "Project not found");
-    }
-
-    const isProjectMember = project.members.some(
-      (memberId) => memberId.toString() === assignedTo.toString(),
-    );
-
-    if (!isProjectMember) {
-      throw new ApiError(400, "Assigned user must be a project member");
-    }
-  }
-
-  const previousAssignee = task.assignedTo;
-
-  task.assignedTo = assignedTo || null;
-
-  await task.save();
-
-  if (
-    assignedTo &&
-    (!previousAssignee || previousAssignee.toString() !== assignedTo.toString())
-  ) {
-    await createNotification({
-      recipient: assignedTo,
-      sender: assignedBy,
-      type: "task-assigned",
-      title: "Task assigned to you",
-      message: `You have been assigned the task "${task.title}"`,
-      relatedTask: task._id,
-      relatedProject: task.project,
-      relatedWorkspace: task.workspace,
-    });
-
-    await createActivity({
-      workspace: task.workspace,
-      project: task.project,
-      task: task._id,
-      user: assignedBy,
-      action: "assigned",
-      entityType: "task",
-      entityId: task._id,
-      description: `Task "${task.title}" was assigned to a user`,
-      metadata: {
-        assignedTo,
-      },
-    });
-  }
-
-  return task;
-};
-export const updateTaskStatus = async (taskId, status, updatedBy) => {
-  const task = await Task.findById(taskId);
-
-  if (!task) {
-    throw new ApiError(404, "Task not found");
-  }
-
-  const workspace = await Workspace.findOne({
-    _id: task.workspace,
-    "members.user": updatedBy,
-    isActive: true,
-  });
-
-  if (!workspace) {
-    throw new ApiError(403, "You do not have access to this task");
-  }
-
-  const previousStatus = task.status;
 
   task.status = status;
 
@@ -484,75 +534,262 @@ export const updateTaskStatus = async (taskId, status, updatedBy) => {
 
   await task.save();
 
-  if (previousStatus !== status) {
-    await createActivity({
+  await task.populate([
+    {
+      path: "createdBy",
+      select: "name email",
+    },
+    {
+      path: "assignedTo",
+      select: "name email",
+    },
+    {
+      path: "project",
+      select: "name workspace",
+    },
+    {
+      path: "workspace",
+      select: "name",
+    },
+  ]);
+
+  await createActivity({
+    user: userId,
+    workspace: task.workspace,
+    project: task.project,
+    task: task._id,
+    action: "status_updated",
+    entityType: "task",
+    entityId: task._id,
+    description: `Changed task "${task.title}" status to "${status}"`,
+  });
+
+  return task;
+};
+
+export const deleteTask = async ({ taskId, userId }) => {
+  if (!isValidObjectId(taskId)) {
+    throw new Error("Invalid task ID");
+  }
+
+  const task = await Task.findById(taskId);
+
+  if (!task) {
+    throw new Error("Task not found");
+  }
+
+  const workspace = await getWorkspaceForUser(task.workspace, userId);
+
+  if (!workspace) {
+    throw new Error("Workspace not found or access denied");
+  }
+
+  const workspaceRole = getWorkspaceMemberRole(workspace, userId);
+
+  if (!["owner", "admin"].includes(workspaceRole)) {
+    throw new Error("You do not have permission to delete this task");
+  }
+
+  
+
+  if (Array.isArray(task.attachments) && task.attachments.length > 0) {
+    for (const attachment of task.attachments) {
+      if (attachment.publicId) {
+        try {
+          await deleteFromCloudinary(attachment.publicId);
+        } catch (error) {
+
+        }
+      }
+    }
+  }
+
+  await task.deleteOne();
+
+  await createActivity({
+    user: userId,
+    workspace: task.workspace,
+    project: task.project,
+    task: task._id,
+    action: "deleted",
+    entityType: "task",
+    entityId: task._id,
+    description: `Deleted task "${task.title}"`,
+  });
+
+  return {
+    message: "Task deleted successfully",
+  };
+};
+
+export const assignTask = async ({ taskId, userId, assignedTo }) => {
+  if (!isValidObjectId(taskId)) {
+    throw new Error("Invalid task ID");
+  }
+
+  if (!isValidObjectId(assignedTo)) {
+    throw new Error("Invalid assigned user ID");
+  }
+
+  const task = await Task.findById(taskId);
+
+  if (!task) {
+    throw new Error("Task not found");
+  }
+
+  const workspace = await getWorkspaceForUser(task.workspace, userId);
+
+  if (!workspace) {
+    throw new Error("Workspace not found or access denied");
+  }
+
+  const workspaceRole = getWorkspaceMemberRole(workspace, userId);
+
+  if (!["owner", "admin", "manager"].includes(workspaceRole)) {
+    throw new Error("You do not have permission to assign tasks");
+  }
+
+  if (!isWorkspaceMember(workspace, assignedTo)) {
+    throw new Error("Assigned user is not a member of this workspace");
+  }
+
+  const project = await getProjectForWorkspace(task.project, task.workspace);
+
+  if (!project) {
+    throw new Error("Project not found");
+  }
+
+  if (!isProjectMember(project, assignedTo)) {
+    throw new Error("Assigned user is not a member of this project");
+  }
+
+  task.assignedTo = assignedTo;
+
+  await task.save();
+
+  await task.populate([
+    {
+      path: "createdBy",
+      select: "name email",
+    },
+    {
+      path: "assignedTo",
+      select: "name email",
+    },
+    {
+      path: "project",
+      select: "name workspace",
+    },
+    {
+      path: "workspace",
+      select: "name",
+    },
+  ]);
+
+  await createActivity({
+    user: userId,
+    workspace: task.workspace,
+    project: task.project,
+    task: task._id,
+    action: "assigned",
+    entityType: "task",
+    entityId: task._id,
+    description: `Assigned task "${task.title}"`,
+  });
+
+  if (assignedTo.toString() !== userId.toString()) {
+    await createNotification({
+      recipient: assignedTo,
+      sender: userId,
       workspace: task.workspace,
       project: task.project,
       task: task._id,
-      user: updatedBy,
-      action: "status-changed",
-      entityType: "task",
-      entityId: task._id,
-      description: `Task "${task.title}" status changed from "${previousStatus}" to "${status}"`,
-      metadata: {
-        previousStatus,
-        newStatus: status,
-      },
+      type: "task_assigned",
+      message: `You were assigned task "${task.title}"`,
     });
   }
 
   return task;
 };
-export const deleteTaskAttachment = async (taskId, attachmentId, deletedBy) => {
+
+export const deleteTaskAttachment = async ({
+  taskId,
+  attachmentId,
+  userId,
+}) => {
+  if (!isValidObjectId(taskId)) {
+    throw new Error("Invalid task ID");
+  }
+
   const task = await Task.findById(taskId);
 
   if (!task) {
-    throw new ApiError(404, "Task not found");
+    throw new Error("Task not found");
   }
 
-  const workspace = await Workspace.findById(task.workspace);
+  const workspace = await getWorkspaceForUser(task.workspace, userId);
 
-  if (!workspace || !workspace.isActive) {
-    throw new ApiError(404, "Workspace not found");
+  if (!workspace) {
+    throw new Error("Workspace not found or access denied");
   }
 
-  const isMember = workspace.members.some((member) => {
-    const memberUserId = member.user?._id || member.user;
+  const workspaceRole = getWorkspaceMemberRole(workspace, userId);
 
-    return memberUserId && memberUserId.toString() === deletedBy.toString();
-  });
+  const isManagerLevel = ["owner", "admin", "manager"].includes(workspaceRole);
 
-  if (!isMember) {
-    throw new ApiError(403, "You do not have access to this task");
+  const isTaskOwner = task.createdBy?.toString() === userId.toString();
+
+  const isAssignee = task.assignedTo?.toString() === userId.toString();
+
+  if (!isManagerLevel && !isTaskOwner && !isAssignee) {
+    throw new Error("You do not have permission to delete this attachment");
   }
 
-  const attachment = task.attachments.id(attachmentId);
+  const attachmentIndex = task.attachments.findIndex(
+    (attachment) =>
+      attachment._id?.toString() === attachmentId.toString() ||
+      attachment.publicId === attachmentId,
+  );
 
-  if (!attachment) {
-    throw new ApiError(404, "Attachment not found");
+  if (attachmentIndex === -1) {
+    throw new Error("Attachment not found");
   }
 
-  await deleteFromCloudinary(attachment.publicId);
+  const attachment = task.attachments[attachmentIndex];
 
-  task.attachments.pull(attachmentId);
+  
+
+  if (attachment.publicId) {
+    await deleteFromCloudinary(attachment.publicId);
+  }
+
+  
+
+  task.attachments.splice(attachmentIndex, 1);
 
   await task.save();
 
   await createActivity({
+    user: userId,
     workspace: task.workspace,
     project: task.project,
     task: task._id,
-    user: deletedBy,
-    action: "deleted",
+    action: "attachment_deleted",
     entityType: "task",
     entityId: task._id,
-    description: `Attachment "${attachment.originalName}" was deleted from task "${task.title}"`,
-    metadata: {
-      attachmentId,
-      originalName: attachment.originalName,
-      publicId: attachment.publicId,
-    },
+    description: `Deleted attachment from task "${task.title}"`,
   });
 
   return task;
+};
+
+export {
+  createTask as createTaskService,
+  getTasks as getTasksService,
+  getTaskById as getTaskByIdService,
+  updateTask as updateTaskService,
+  deleteTask as deleteTaskService,
+  assignTask as assignTaskService,
+  updateTaskStatus as updateTaskStatusService,
+  deleteTaskAttachment as deleteTaskAttachmentService,
 };

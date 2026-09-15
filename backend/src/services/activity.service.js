@@ -1,6 +1,20 @@
 import Activity from "../models/Activity.js";
 import ApiError from "../utils/ApiError.js";
 import Workspace from "../models/Workspace.js";
+import Project from "../models/Project.js";
+import Task from "../models/Task.js";
+
+const isWorkspaceMember = (workspace, userId) => {
+  if (!workspace || !userId) {
+    return false;
+  }
+
+  return workspace.members.some((member) => {
+    const memberUserId = member.user?._id || member.user;
+
+    return memberUserId && memberUserId.toString() === userId.toString();
+  });
+};
 
 export const createActivity = async ({
   workspace,
@@ -35,39 +49,141 @@ export const getActivities = async ({
   limit = 20,
   userId,
 }) => {
-  const filter = {};
+  if (!userId) {
+    throw new ApiError(401, "User authentication is required");
+  }
+
+  
+
+  let authorizedWorkspaceId = null;
 
   if (workspace) {
-    const workspaceExists = await Workspace.findById(workspace);
+    const workspaceExists = await Workspace.findOne({
+      _id: workspace,
+      isActive: true,
+    });
 
-    if (!workspaceExists || !workspaceExists.isActive) {
+    if (!workspaceExists) {
       throw new ApiError(404, "Workspace not found");
     }
 
-    const isMember = workspaceExists.members.some((member) => {
-      const memberUserId = member.user?._id || member.user;
-
-      return memberUserId && memberUserId.toString() === userId.toString();
-    });
-
-    if (!isMember) {
+    if (!isWorkspaceMember(workspaceExists, userId)) {
       throw new ApiError(403, "You do not have access to this workspace");
     }
 
-    filter.workspace = workspace;
+    authorizedWorkspaceId = workspaceExists._id;
+  } else {
+    
+
+    const userWorkspaces = await Workspace.find({
+      isActive: true,
+      "members.user": userId,
+    }).select("_id");
+
+    
+
+    if (userWorkspaces.length === 0) {
+      return {
+        activities: [],
+        pagination: {
+          page: Math.max(Number(page) || 1, 1),
+          limit: Math.min(Math.max(Number(limit) || 20, 1), 100),
+          total: 0,
+          totalPages: 0,
+        },
+      };
+    }
+
+    
+
+    authorizedWorkspaceId = {
+      $in: userWorkspaces.map((item) => item._id),
+    };
   }
 
+  
+
+  const filter = {
+    workspace: authorizedWorkspaceId,
+  };
+
+  
+
   if (project) {
+    const projectExists = await Project.findById(project);
+
+    if (!projectExists) {
+      throw new ApiError(404, "Project not found");
+    }
+
+    
+
+    if (authorizedWorkspaceId && !authorizedWorkspaceId.$in) {
+      if (
+        projectExists.workspace.toString() !== authorizedWorkspaceId.toString()
+      ) {
+        throw new ApiError(403, "Project does not belong to this workspace");
+      }
+    }
+
+    
+
+    if (authorizedWorkspaceId?.$in) {
+      const hasAccess = authorizedWorkspaceId.$in.some(
+        (workspaceId) =>
+          workspaceId.toString() === projectExists.workspace.toString(),
+      );
+
+      if (!hasAccess) {
+        throw new ApiError(403, "You do not have access to this project");
+      }
+    }
+
     filter.project = project;
   }
 
+  
+
   if (task) {
+    const taskExists = await Task.findById(task);
+
+    if (!taskExists) {
+      throw new ApiError(404, "Task not found");
+    }
+
+    
+
+    if (authorizedWorkspaceId && !authorizedWorkspaceId.$in) {
+      if (
+        taskExists.workspace.toString() !== authorizedWorkspaceId.toString()
+      ) {
+        throw new ApiError(403, "Task does not belong to this workspace");
+      }
+    }
+
+    
+
+    if (authorizedWorkspaceId?.$in) {
+      const hasAccess = authorizedWorkspaceId.$in.some(
+        (workspaceId) =>
+          workspaceId.toString() === taskExists.workspace.toString(),
+      );
+
+      if (!hasAccess) {
+        throw new ApiError(403, "You do not have access to this task");
+      }
+    }
+
     filter.task = task;
   }
+
+  
 
   if (user) {
     filter.user = user;
   }
+
+  
 
   const currentPage = Math.max(Number(page) || 1, 1);
 
@@ -75,12 +191,16 @@ export const getActivities = async ({
 
   const skip = (currentPage - 1) * currentLimit;
 
+  
+
   const [activities, total] = await Promise.all([
     Activity.find(filter)
       .populate("user", "name email avatar")
       .populate("project", "name")
       .populate("task", "title")
-      .sort({ createdAt: -1 })
+      .sort({
+        createdAt: -1,
+      })
       .skip(skip)
       .limit(currentLimit),
 
@@ -105,21 +225,24 @@ export const getActivityById = async (activityId, userId) => {
     throw new ApiError(404, "Activity not found");
   }
 
-  const workspace = await Workspace.findById(activity.workspace);
+  
 
-  if (!workspace || !workspace.isActive) {
+  const workspace = await Workspace.findOne({
+    _id: activity.workspace,
+    isActive: true,
+  });
+
+  if (!workspace) {
     throw new ApiError(404, "Workspace not found");
   }
 
-  const isMember = workspace.members.some((member) => {
-    const memberUserId = member.user?._id || member.user;
+  
 
-    return memberUserId && memberUserId.toString() === userId.toString();
-  });
-
-  if (!isMember) {
+  if (!isWorkspaceMember(workspace, userId)) {
     throw new ApiError(403, "You do not have access to this activity");
   }
+
+  
 
   await activity.populate([
     {
