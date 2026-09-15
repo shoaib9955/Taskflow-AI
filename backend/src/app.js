@@ -24,11 +24,8 @@ import connectDB from "./config/db.js";
 
 const app = express();
 
-/*
- * Connect to MongoDB before handling API requests.
- * connectDB() uses a cached connection, so Vercel can
- * reuse the same MongoDB connection across requests.
- */
+app.set("trust proxy", 1);
+
 app.use(async (req, res, next) => {
   try {
     await connectDB();
@@ -47,10 +44,6 @@ app.use(helmet());
 
 app.use(cors(corsOptions));
 
-/*
- * Explicitly handle CORS preflight requests.
- * Required for cross-origin requests from the Vercel frontend.
- */
 app.options("/{*splat}", cors(corsOptions));
 
 app.use(express.json({ limit: "1mb" }));
@@ -75,31 +68,15 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.get("/api/db-health", async (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "MongoDB connection is working",
-  });
-});
-
 app.use("/api/auth", authRoutes);
-
 app.use("/api/users", userRoutes);
-
 app.use("/api/workspaces", workspaceRoutes);
-
 app.use("/api/projects", projectRoutes);
-
 app.use("/api/tasks", taskRoutes);
-
 app.use("/api/comments", commentRoutes);
-
 app.use("/api/notifications", notificationRoutes);
-
 app.use("/api/ai", aiRoutes);
-
 app.use("/api/activities", activityRoutes);
-
 app.use("/api/uploads", uploadRoutes);
 
 app.use(notFound);
