@@ -6,13 +6,15 @@ import {
   getCurrentUser,
 } from "../services/auth.service.js";
 
+const isProduction = process.env.VERCEL === "1";
+
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+  path: "/",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
-
 export const register = asyncHandler(async (req, res) => {
   const result = await registerUser(req.body);
 
