@@ -1,6 +1,10 @@
 import env from "./env.js";
 
-const allowedOrigins = [env.clientUrl, "https://taskflow-shoaib.vercel.app"];
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://taskflow-shoaib.vercel.app",
+  env.clientUrl,
+];
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -12,7 +16,6 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow TaskFlow frontend Vercel preview deployments
     if (
       origin.startsWith("https://taskflow-ai-frontend-") &&
       origin.endsWith(".vercel.app")
@@ -20,7 +23,7 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    callback(new Error("CORS policy: Origin not allowed"));
+    callback(new Error(`CORS policy: Origin not allowed: ${origin}`));
   },
 
   credentials: true,

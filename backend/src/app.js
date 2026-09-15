@@ -37,7 +37,7 @@ app.use(
 app.use(cookieParser());
 
 app.use(morgan("dev"));
-app.use(apiRateLimiter);
+//app.use(apiRateLimiter);
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({
